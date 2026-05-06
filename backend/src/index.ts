@@ -1,0 +1,77 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import path from 'path';
+
+import authRoutes from './routes/auth';
+import userRoutes from './routes/users';
+import seriesRoutes from './routes/series';
+import partRoutes from './routes/parts';
+import productRoutes from './routes/products';
+import documentRoutes from './routes/documents';
+import searchRoutes from './routes/search';
+import ecnRoutes from './routes/ecns';
+import notificationRoutes from './routes/notifications';
+import statsRoutes from './routes/stats';
+import reportRoutes from './routes/reports';
+import batchUploadRoutes from './routes/batch-upload';
+
+// 啟動時驗證必要環境變數
+if (!process.env.JWT_SECRET) {
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev) {
+    console.warn('警告: 環境變數 JWT_SECRET 未設置，開發模式將使用預設值');
+    process.env.JWT_SECRET = 'pdm-system-secret-key-change-in-production';
+  } else {
+    console.error('錯誤: 環境變數 JWT_SECRET 未設置，應用無法啟動');
+    process.exit(1);
+  }
+}
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+}));
+app.use(helmet());
+app.use(express.json());
+
+// API 路由
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/series', seriesRoutes);
+app.use('/api/parts', partRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/ecns', ecnRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/batch-upload', batchUploadRoutes);
+
+// 健康檢查
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 靜態檔案服務（上傳的檔案）
+app.use('/uploads', express.static(path.resolve(process.env.UPLOAD_DIR || './uploads')));
+
+// 錯誤處理
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(err.stack);
+  const isDev = process.env.NODE_ENV === 'development';
+  res.status(500).json({
+    error: '伺服器內部錯誤',
+    ...(isDev && err.message ? { details: err.message } : {}),
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`PDM 伺服器執行於 http://localhost:${PORT}`);
+});

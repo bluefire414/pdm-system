@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("ENGINEER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdDocuments Document[]     @relation("CreatedBy")
+  reviewedECNs     ECN[]          @relation("ReviewedBy")
+  notifications    Notification[]
+}
+
+model ProductSeries {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  name        String
+  description String?
+  parts       Part[]
+}
+
+model Part {
+  id          String        @id @default(uuid())
+  partNumber  String        @unique
+  name        String
+  description String?
+  seriesId    String
+  series      ProductSeries @relation(fields: [seriesId], references: [id])
+  documents   Document[]
+  productBOMs ProductBOM[]
+}
+
+model Product {
+  id          String       @id @default(uuid())
+  productCode String       @unique
+  name        String
+  description String?
+  boms        ProductBOM[]
+  documents   Document[]
+}
+
+model ProductBOM {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  partId    String
+  part      Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+  quantity  Int     @default(1)
+
+  @@unique([productId, partId])
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  partId       String?
+  part         Part?    @relation(fields: [partId], references: [id])
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id])
+  documentType String
+  status       String   @default("DRAFT")
+  version      Int      @default(1)
+  remark       String?
+  createdById  String
+  createdBy    User     @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  files DocumentFile[]
+  ecns  ECN[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([partId])
+  @@index([productId])
+}
+
+model DocumentFile {
+  id           String   @id @default(uuid())
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fileType     String
+  fileName     String
+  originalName String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  createdAt    DateTime @default(now())
+
+  @@index([documentId])
+}
+
+model ECN {
+  id           String   @id @default(uuid())
+  ecnNo        String   @unique
+  title        String
+  description  String
+  status       String   @default("PENDING")
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id])
+  reviewedById String?
+  reviewedBy   User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}

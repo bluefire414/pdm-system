@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  pdm-db:
+    image: postgres:16-alpine
+    container_name: pdm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=pdm
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-pdm_password}
+      - POSTGRES_DB=pdm
+    volumes:
+      - pdm-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  pdm-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pdm-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://pdm:${DB_PASSWORD:-pdm_password}@pdm-db:5432/pdm
+      - JWT_SECRET=${JWT_SECRET}
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - pdm-uploads:/app/uploads
+      - ./backend/prisma/schema.postgresql.prisma:/app/prisma/schema.prisma:ro
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      - pdm-db
+
+volumes:
+  pdm-postgres:
+  pdm-uploads:

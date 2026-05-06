@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  pdm-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pdm-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=file:./dev.db
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - pdm-uploads:/app/uploads
+      - pdm-sqlite:/app/prisma
+    ports:
+      - "3001:3001"
+
+  pdm-nginx:
+    image: nginx:alpine
+    container_name: pdm-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - pdm-backend
+
+volumes:
+  pdm-uploads:
+  pdm-sqlite:
