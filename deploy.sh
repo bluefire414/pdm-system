@@ -13,9 +13,11 @@ npm ci
 npm run build
 cd ..
 
-echo ">>> 檢查環境變數..."
+echo ">>> 載入環境變數..."
+source .env 2>/dev/null || true
+
 if [ -z "$JWT_SECRET" ]; then
-  echo "錯誤: JWT_SECRET 未設置，請先配置 .env"
+  echo "錯誤: JWT_SECRET 未設置，請先複製 .env.example 為 .env 並填入真實值"
   exit 1
 fi
 
