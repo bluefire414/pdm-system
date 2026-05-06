@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FileExcelOutlined } from '@ant-design/icons';
 import client, { downloadReport } from '../api/client';
-import type { Part, Series } from '../types';
+import type { Part, PartCategory } from '../types';
 
 const PartsPage: React.FC = () => {
   const [parts, setParts] = useState<Part[]>([]);
-  const [seriesList, setSeriesList] = useState<Series[]>([]);
+  const [categoryList, setCategoryList] = useState<PartCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Part | null>(null);
@@ -15,12 +15,12 @@ const PartsPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [partsRes, seriesRes] = await Promise.all([
+      const [partsRes, categoryRes] = await Promise.all([
         client.get('/parts'),
-        client.get('/series'),
+        client.get('/part-categories'),
       ]);
       setParts(partsRes.data);
-      setSeriesList(seriesRes.data);
+      setCategoryList(categoryRes.data);
     } finally {
       setLoading(false);
     }
@@ -61,7 +61,7 @@ const PartsPage: React.FC = () => {
   const columns = [
     { title: '料號', dataIndex: 'partNumber', key: 'partNumber' },
     { title: '名稱', dataIndex: 'name', key: 'name' },
-    { title: '系列', key: 'series', render: (_: any, r: Part) => r.series ? `${r.series.code} - ${r.series.name}` : '-' },
+    { title: '類別', key: 'category', render: (_: any, r: Part) => r.category ? `${r.category.code} - ${r.category.name}` : '-' },
     { title: '說明', dataIndex: 'description', key: 'description' },
     {
       title: '操作',
@@ -128,8 +128,8 @@ const PartsPage: React.FC = () => {
           <Form.Item name="name" label="名稱" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="seriesId" label="所屬系列" rules={[{ required: true }]}>
-            <Select options={seriesList.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))} />
+          <Form.Item name="categoryId" label="所屬類別" rules={[{ required: true }]}>
+            <Select options={categoryList.map((c) => ({ value: c.id, label: `${c.code} - ${c.name}` }))} />
           </Form.Item>
           <Form.Item name="description" label="說明">
             <Input.TextArea />

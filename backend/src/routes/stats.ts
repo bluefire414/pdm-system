@@ -10,6 +10,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
 
   const [
     seriesCount,
+    partCategoriesCount,
     partsCount,
     productsCount,
     documentsCount,
@@ -18,6 +19,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
     unreadNotificationsCount,
   ] = await Promise.all([
     prisma.productSeries.count(),
+    prisma.partCategory.count(),
     prisma.part.count(),
     prisma.product.count(),
     prisma.document.count(),
@@ -28,6 +30,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
 
   res.json({
     seriesCount,
+    partCategoriesCount,
     partsCount,
     productsCount,
     documentsCount,

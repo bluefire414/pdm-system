@@ -20,11 +20,11 @@ function validateIdParam(id: string): boolean {
 }
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
-  const { seriesId } = req.query;
+  const { categoryId } = req.query;
   const keyword = sanitizeKeyword(req.query.keyword);
   const where: any = {};
 
-  if (seriesId) where.seriesId = String(seriesId);
+  if (categoryId) where.categoryId = String(categoryId);
   if (keyword) {
     where.OR = [
       { partNumber: { contains: keyword } },
@@ -35,7 +35,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 
   const parts = await prisma.part.findMany({
     where,
-    include: { series: { select: { code: true, name: true } } },
+    include: { category: { select: { code: true, name: true } } },
     orderBy: { partNumber: 'asc' },
   });
   res.json(parts);
@@ -45,7 +45,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const part = await prisma.part.findUnique({
     where: { id: req.params.id },
     include: {
-      series: true,
+      category: true,
       documents: {
         include: { files: true },
         orderBy: { createdAt: 'desc' },
@@ -65,7 +65,7 @@ router.post('/', authenticateToken, asyncHandler(async (req, res) => {
       partNumber: z.string().min(1).max(100),
       name: z.string().min(1).max(200),
       description: z.string().optional(),
-      seriesId: z.string().uuid(),
+      categoryId: z.string().uuid(),
     });
     const data = schema.parse(req.body);
 
@@ -90,7 +90,7 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1).max(200).optional(),
       description: z.string().optional(),
-      seriesId: z.string().uuid().optional(),
+      categoryId: z.string().uuid().optional(),
     });
     const data = schema.parse(req.body);
 

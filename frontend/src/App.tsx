@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import PartCategoriesPage from './pages/PartCategoriesPage';
 import SeriesPage from './pages/SeriesPage';
 import PartsPage from './pages/PartsPage';
 import ProductsPage from './pages/ProductsPage';
@@ -34,6 +35,7 @@ const AppRoutes: React.FC = () => {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="part-categories" element={<PartCategoriesPage />} />
         <Route path="series" element={<SeriesPage />} />
         <Route path="parts" element={<PartsPage />} />
         <Route path="products" element={<ProductsPage />} />

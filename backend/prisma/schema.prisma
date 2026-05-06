@@ -22,7 +22,7 @@ model User {
   notifications    Notification[]
 }
 
-model ProductSeries {
+model PartCategory {
   id          String  @id @default(uuid())
   code        String  @unique
   name        String
@@ -30,22 +30,32 @@ model ProductSeries {
   parts       Part[]
 }
 
-model Part {
-  id          String        @id @default(uuid())
-  partNumber  String        @unique
+model ProductSeries {
+  id          String    @id @default(uuid())
+  code        String    @unique
   name        String
   description String?
-  seriesId    String
-  series      ProductSeries @relation(fields: [seriesId], references: [id])
+  products    Product[]
+}
+
+model Part {
+  id          String       @id @default(uuid())
+  partNumber  String       @unique
+  name        String
+  description String?
+  categoryId  String
+  category    PartCategory @relation(fields: [categoryId], references: [id])
   documents   Document[]
   productBOMs ProductBOM[]
 }
 
 model Product {
-  id          String       @id @default(uuid())
-  productCode String       @unique
+  id          String        @id @default(uuid())
+  productCode String        @unique
   name        String
   description String?
+  seriesId    String
+  series      ProductSeries @relation(fields: [seriesId], references: [id])
   boms        ProductBOM[]
   documents   Document[]
 }

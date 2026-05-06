@@ -15,13 +15,20 @@ export interface Series {
   description?: string;
 }
 
+export interface PartCategory {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+}
+
 export interface Part {
   id: string;
   partNumber: string;
   name: string;
   description?: string;
-  seriesId: string;
-  series?: Series;
+  categoryId: string;
+  category?: PartCategory;
 }
 
 export interface Product {
@@ -29,8 +36,8 @@ export interface Product {
   productCode: string;
   name: string;
   description?: string;
-  partId: string;
-  part?: Part;
+  seriesId: string;
+  series?: Series;
 }
 
 export interface DocumentItem {

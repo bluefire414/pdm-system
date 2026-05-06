@@ -31,6 +31,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 
   const products = await prisma.product.findMany({
     where,
+    include: { series: { select: { code: true, name: true } } },
     orderBy: { productCode: 'asc' },
   });
   res.json(products);
@@ -44,7 +45,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
         include: {
           part: {
             include: {
-              series: { select: { code: true, name: true } },
+              category: { select: { code: true, name: true } },
             },
           },
         },
@@ -68,6 +69,7 @@ router.post('/', authenticateToken, asyncHandler(async (req, res) => {
       productCode: z.string().min(1).max(100),
       name: z.string().min(1).max(200),
       description: z.string().optional(),
+      seriesId: z.string().uuid(),
     });
     const data = schema.parse(req.body);
 
@@ -92,6 +94,7 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1).max(200).optional(),
       description: z.string().optional(),
+      seriesId: z.string().uuid().optional(),
     });
     const data = schema.parse(req.body);
 
@@ -156,7 +159,7 @@ router.post('/:id/boms', authenticateToken, asyncHandler(async (req, res) => {
       include: {
         part: {
           include: {
-            series: { select: { code: true, name: true } },
+            category: { select: { code: true, name: true } },
           },
         },
       },

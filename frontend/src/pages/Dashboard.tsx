@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Statistic, Spin } from 'antd';
 import {
-  FileOutlined, BuildOutlined, ToolOutlined, AppstoreOutlined,
+  FileOutlined, BuildOutlined, ToolOutlined, AppstoreOutlined, TagsOutlined,
   CheckCircleOutlined, SwapOutlined, BellOutlined,
 } from '@ant-design/icons';
 import client from '../api/client';
 
 interface StatsData {
   seriesCount: number;
+  partCategoriesCount: number;
   partsCount: number;
   productsCount: number;
   documentsCount: number;
@@ -48,6 +49,11 @@ const Dashboard: React.FC = () => {
         </Col>
         <Col span={6}>
           <Card>
+            <Statistic title="零部件類別" value={stats.partCategoriesCount} prefix={<TagsOutlined />} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
             <Statistic title="零部件" value={stats.partsCount} prefix={<ToolOutlined />} />
           </Card>
         </Col>
@@ -56,14 +62,14 @@ const Dashboard: React.FC = () => {
             <Statistic title="成品" value={stats.productsCount} prefix={<BuildOutlined />} />
           </Card>
         </Col>
+      </Row>
+      <Row gutter={16} style={{ marginTop: 16 }}>
         <Col span={6}>
           <Card>
             <Statistic title="文件總數" value={stats.documentsCount} prefix={<FileOutlined />} />
           </Card>
         </Col>
-      </Row>
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
             <Statistic
               title="已發行文件"
@@ -73,7 +79,7 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
             <Statistic
               title="待審核 ECN"
@@ -83,7 +89,7 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
             <Statistic
               title="未讀通知"
@@ -94,6 +100,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
       <div style={{ marginTop: 24 }}>
         <Card title="系統公告">
           <p>PDM 系統已上線，請開始使用。</p>

@@ -12,6 +12,7 @@ import {
   BellOutlined,
   LogoutOutlined,
   UserOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -41,8 +42,9 @@ const Layout: React.FC = () => {
 
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '儀表板' },
-    { key: '/series', icon: <AppstoreOutlined />, label: '產品系列' },
+    { key: '/part-categories', icon: <TagsOutlined />, label: '零部件類別' },
     { key: '/parts', icon: <ToolOutlined />, label: '零部件管理' },
+    { key: '/series', icon: <AppstoreOutlined />, label: '產品系列' },
     { key: '/products', icon: <BuildOutlined />, label: '成品管理' },
     { key: '/documents', icon: <FileOutlined />, label: '文件中心' },
     { key: '/batch-upload', icon: <CloudUploadOutlined />, label: '批量上傳' },
