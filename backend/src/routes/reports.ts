@@ -56,14 +56,14 @@ router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest
 
 router.get('/parts', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   const parts = await prisma.part.findMany({
-    include: { series: { select: { code: true, name: true } } },
+    include: { category: { select: { code: true, name: true } } },
     orderBy: { partNumber: 'asc' },
   });
 
   const data = parts.map((p) => ({
     '料號': p.partNumber,
     '名稱': p.name,
-    '系列': `${p.series.code} - ${p.series.name}`,
+    '類別': `${p.category.code} - ${p.category.name}`,
     '說明': p.description || '',
   }));
 

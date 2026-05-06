@@ -77,7 +77,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, res)
   const doc = await prisma.document.findUnique({
     where: { id: req.params.id },
     include: {
-      part: { include: { series: true } },
+      part: { include: { category: true } },
       product: true,
       files: true,
       createdBy: { select: { name: true } },

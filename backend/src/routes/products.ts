@@ -130,7 +130,7 @@ router.get('/:id/boms', authenticateToken, asyncHandler(async (req, res) => {
     include: {
       part: {
         include: {
-          series: { select: { code: true, name: true } },
+          category: { select: { code: true, name: true } },
         },
       },
     },

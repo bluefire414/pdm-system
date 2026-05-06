@@ -32,7 +32,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
         { description: { contains: searchTerm } },
       ],
     },
-    include: { series: { select: { code: true, name: true } } },
+    include: { category: { select: { code: true, name: true } } },
     take: 20,
   });
 
