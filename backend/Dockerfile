@@ -1,5 +1,5 @@
 # 構建階段
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY . .
 RUN npx prisma generate && npm run build
 
 # 生產階段
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
