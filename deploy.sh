@@ -5,7 +5,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
 echo ">>> 拉取最新代碼..."
-git pull origin main
+git pull origin master
 
 echo ">>> 構建前端..."
 cd frontend
