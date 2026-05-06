@@ -31,4 +31,4 @@ EXPOSE 3001
 
 RUN mkdir -p /app/uploads
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm start"]
