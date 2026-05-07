@@ -9,7 +9,8 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npx prisma generate --schema=prisma/schema.postgresql.prisma && npm run build
+RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/g' prisma/schema.prisma
+RUN npx prisma generate --schema=prisma/schema.prisma && npm run build
 
 # 生產階段
 FROM node:20-slim

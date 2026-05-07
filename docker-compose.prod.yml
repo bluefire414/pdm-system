@@ -28,7 +28,6 @@ services:
       - UPLOAD_DIR=/app/uploads
     volumes:
       - pdm-uploads:/app/uploads
-      - ./backend/prisma/schema.postgresql.prisma:/app/prisma/schema.prisma:ro
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
