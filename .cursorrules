@@ -1,0 +1,77 @@
+# PDM 產品資料管理系統 — AI 助手操作規範
+
+## 項目概述
+- 技術棧：React + Vite（前端）/ Node.js + Express + Prisma（後端）/ SQLite（本地開發）/ PostgreSQL（生產環境）/ Nginx + Docker（部署）
+- 本地開發運行於 localhost:5173（前端）與 SQLite（後端）
+- 生產環境部署於阿里云 ECS，域名 pdm.salecomlab.com
+
+---
+
+## 核心原則：Prisma Schema 單一源頭
+
+**絕對禁止維護兩個獨立的 schema 檔案。**
+
+- 只允許存在 `backend/prisma/schema.prisma` 一個 schema 檔案
+- `datasource db` 的 `provider` 必須設為 `"sqlite"`（本地開發使用）
+- **禁止**創建 `schema.postgresql.prisma` 或任何其他 schema 複本
+- 生產環境的 provider 切換由 `backend/Dockerfile` 自動處理：
+  ```dockerfile
+  RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/g' prisma/schema.prisma
+  RUN npx prisma generate --schema=prisma/schema.prisma && npm run build
+  ```
+
+---
+
+## 修改 Prisma Schema 時的強制檢查清單
+
+當你修改 `backend/prisma/schema.prisma` 時，必須依次檢查：
+
+1. **單一源頭確認**：沒有創建或遺留 `schema.postgresql.prisma`
+2. **Dockerfile 確認**：`sed` 替換 provider 的步驟仍然存在
+3. **docker-compose 確認**：`docker-compose.prod.yml` 沒有掛載任何 schema 檔案覆蓋 `/app/prisma/schema.prisma`
+4. **migration_lock 確認**：`backend/prisma/migrations/migration_lock.toml` 中的 `provider = "postgresql"`
+5. **後端路由確認**：檢查 `backend/src/routes/` 下所有檔案，確保沒有引用已刪除的模型或欄位
+6. **前端類型確認**：檢查 `frontend/src/types/index.ts` 是否需要同步更新
+7. **seed 腳本確認**：檢查 `backend/prisma/seed.ts` 是否引用變更的模型
+
+---
+
+## 生產部署架構
+
+- `docker-compose.prod.yml` 啟動 `pdm-db`（PostgreSQL）與 `pdm-backend`
+- 後端綁定 `127.0.0.1:3001`，由宿主機 Nginx 反向代理 `/api/` 與 `/uploads/`
+- 前端靜態檔案由宿主機 Nginx 直接服務（`frontend/dist`）
+- 環境變數 `JWT_SECRET` 必須在 `.env` 中設定，否則 deploy.sh 會終止
+
+---
+
+## 資料庫 Seed 初始化（關鍵！）
+
+**生產環境部署後，資料庫預設是空的，必須手動執行 seed：**
+
+```bash
+docker exec pdm-backend sh -c "cd /app && npx tsx prisma/seed.ts"
+```
+
+Seed 會建立以下預設帳號：
+- `admin` / `admin123`（ADMIN）
+- `engineer1` / `pass123`（ENGINEER）
+- `viewer1` / `pass123`（VIEWER）
+
+若跳過此步驟，登入頁面將無法運作。
+
+---
+
+## 常見陷阱
+
+- **PartCategory 模型**：舊版 PostgreSQL schema 沒有此模型，若在其他工具看到遺留的 `schema.postgresql.prisma`，立即刪除並統一到 `schema.prisma`
+- **API 前綴**：所有後端路由必須帶 `/api` 前綴（Nginx 已配置代理）
+- **Docker build cache**：修改 schema 後若部署異常，嘗試 `docker compose build --no-cache`
+
+---
+
+## 雙遠端倉庫
+
+- GitHub：`origin`（https://github.com/bluefire414/pdm-system.git）
+- Gitee：`gitee`（https://gitee.com/bluefire414/pdm-system.git）
+- 提交後必須同時推送兩個遠端
