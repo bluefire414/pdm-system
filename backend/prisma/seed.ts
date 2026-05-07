@@ -1,107 +1,182 @@
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const hashedPassword = await bcrypt.hash('admin123', 10);
-
-  // 建立預設管理員
+  // 1. 用戶
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
     create: {
       username: 'admin',
-      password: hashedPassword,
+      password: await bcrypt.hash('admin123', 10),
       name: '系統管理員',
       role: 'ADMIN',
     },
   });
 
-  // 建立測試使用者
   await prisma.user.upsert({
     where: { username: 'engineer1' },
     update: {},
     create: {
       username: 'engineer1',
-      password: await bcrypt.hash('engineer123', 10),
-      name: '工程人員-張三',
+      password: await bcrypt.hash('pass123', 10),
+      name: '工程師一號',
       role: 'ENGINEER',
     },
   });
 
   await prisma.user.upsert({
-    where: { username: 'mold1' },
+    where: { username: 'viewer1' },
     update: {},
     create: {
-      username: 'mold1',
-      password: await bcrypt.hash('mold123', 10),
-      name: '模具人員-李四',
-      role: 'MOLD',
+      username: 'viewer1',
+      password: await bcrypt.hash('pass123', 10),
+      name: '檢視員一號',
+      role: 'VIEWER',
     },
   });
 
-  await prisma.user.upsert({
-    where: { username: 'sales1' },
+  // 2. 產品系列
+  const seriesA = await prisma.productSeries.upsert({
+    where: { code: 'SL-A' },
     update: {},
     create: {
-      username: 'sales1',
-      password: await bcrypt.hash('sales123', 10),
-      name: '業務人員-王五',
-      role: 'SALES',
+      code: 'SL-A',
+      name: 'A系列-消費電子',
+      description: '消費電子產品系列',
     },
   });
 
-  // 建立測試系列
-  const series1 = await prisma.productSeries.upsert({
-    where: { code: 'SW' },
+  const seriesB = await prisma.productSeries.upsert({
+    where: { code: 'SL-B' },
     update: {},
     create: {
-      code: 'SW',
-      name: '按鈕開關系列',
-      description: '各類按鈕開關產品',
+      code: 'SL-B',
+      name: 'B系列-工業設備',
+      description: '工業設備產品系列',
     },
   });
 
-  const series2 = await prisma.productSeries.upsert({
-    where: { code: 'TG' },
+  const seriesC = await prisma.productSeries.upsert({
+    where: { code: 'SL-C' },
     update: {},
     create: {
-      code: 'TG',
-      name: '撥動開關系列',
-      description: '各類撥動開關產品',
+      code: 'SL-C',
+      name: 'C系列-醫療器材',
+      description: '醫療器材產品系列',
     },
   });
 
-  // 建立測試零件
+  // 3. 成品
+  await prisma.product.upsert({
+    where: { productCode: 'PRD-001' },
+    update: {},
+    create: {
+      productCode: 'PRD-001',
+      name: '智能手環',
+      description: '智能手環產品',
+      seriesId: seriesA.id,
+    },
+  });
+
+  await prisma.product.upsert({
+    where: { productCode: 'PRD-002' },
+    update: {},
+    create: {
+      productCode: 'PRD-002',
+      name: '工業感測器',
+      description: '工業感測器產品',
+      seriesId: seriesB.id,
+    },
+  });
+
+  await prisma.product.upsert({
+    where: { productCode: 'PRD-003' },
+    update: {},
+    create: {
+      productCode: 'PRD-003',
+      name: '血壓計',
+      description: '血壓計產品',
+      seriesId: seriesC.id,
+    },
+  });
+
+  // 4. 零部件類別
+  const catMech = await prisma.partCategory.upsert({
+    where: { code: 'CAT-MECH' },
+    update: {},
+    create: {
+      code: 'CAT-MECH',
+      name: '機構件',
+      description: '機械結構相關零件',
+    },
+  });
+
+  const catElec = await prisma.partCategory.upsert({
+    where: { code: 'CAT-ELEC' },
+    update: {},
+    create: {
+      code: 'CAT-ELEC',
+      name: '電子件',
+      description: '電子元器件',
+    },
+  });
+
+  const catPcb = await prisma.partCategory.upsert({
+    where: { code: 'CAT-PCB' },
+    update: {},
+    create: {
+      code: 'CAT-PCB',
+      name: '電路板',
+      description: '印刷電路板相關',
+    },
+  });
+
+  // 5. 零部件
   await prisma.part.upsert({
-    where: { partNumber: 'SW-101-A' },
+    where: { partNumber: 'PRT-M001' },
     update: {},
     create: {
-      partNumber: 'SW-101-A',
-      name: '按鈕開關本體',
-      description: '標準型按鈕開關本體',
-      seriesId: series1.id,
+      partNumber: 'PRT-M001',
+      name: '外殼組件',
+      description: '產品外殼機構件',
+      categoryId: catMech.id,
     },
   });
 
   await prisma.part.upsert({
-    where: { partNumber: 'SW-102-B' },
+    where: { partNumber: 'PRT-E001' },
     update: {},
     create: {
-      partNumber: 'SW-102-B',
-      name: '防水按鈕帽',
-      description: 'IP67 防水等級按鈕帽',
-      seriesId: series1.id,
+      partNumber: 'PRT-E001',
+      name: '主控MCU',
+      description: '主控制微處理器',
+      categoryId: catElec.id,
+    },
+  });
+
+  await prisma.part.upsert({
+    where: { partNumber: 'PRT-P001' },
+    update: {},
+    create: {
+      partNumber: 'PRT-P001',
+      name: '主板PCB',
+      description: '主印刷電路板',
+      categoryId: catPcb.id,
     },
   });
 
   console.log('Seed data 建立完成');
-  console.log('預設帳號：');
-  console.log('  admin / admin123');
-  console.log('  engineer1 / engineer123');
-  console.log('  mold1 / mold123');
-  console.log('  sales1 / sales123');
+  console.log('用戶：');
+  console.log('  admin / admin123 (ADMIN)');
+  console.log('  engineer1 / pass123 (ENGINEER)');
+  console.log('  viewer1 / pass123 (VIEWER)');
+  console.log('產品系列：SL-A, SL-B, SL-C');
+  console.log('成品：PRD-001, PRD-002, PRD-003');
+  console.log('零部件類別：CAT-MECH, CAT-ELEC, CAT-PCB');
+  console.log('零部件：PRT-M001, PRT-E001, PRT-P001');
 }
 
 main()

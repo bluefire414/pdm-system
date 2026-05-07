@@ -24,8 +24,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const token = localStorage.getItem('pdm_token');
     const savedUser = localStorage.getItem('pdm_user');
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
+    if (token && savedUser && savedUser !== 'undefined') {
+      let parsed: User | null = null;
+      try {
+        parsed = JSON.parse(savedUser);
+      } catch {
+        localStorage.removeItem('pdm_token');
+        localStorage.removeItem('pdm_user');
+        setLoading(false);
+        return;
+      }
+      setUser(parsed);
       client.get('/auth/me').then((res) => {
         if (res.data.user) {
           setUser(res.data.user);
