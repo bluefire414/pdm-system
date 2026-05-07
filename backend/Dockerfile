@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npx prisma generate && npm run build
+RUN npx prisma generate --schema=prisma/schema.postgresql.prisma && npm run build
 
 # 生產階段
 FROM node:20-slim
