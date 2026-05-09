@@ -2,9 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Space } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FileExcelOutlined } from '@ant-design/icons';
 import client, { downloadReport } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import type { Part, PartCategory } from '../types';
 
 const PartsPage: React.FC = () => {
+  const { user } = useAuth();
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'ENGINEER';
   const [parts, setParts] = useState<Part[]>([]);
   const [categoryList, setCategoryList] = useState<PartCategory[]>([]);
   const [loading, setLoading] = useState(false);
@@ -79,11 +82,13 @@ const PartsPage: React.FC = () => {
           >
             編輯
           </Button>
-          <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              刪除
-            </Button>
-          </Popconfirm>
+          {canDelete && (
+            <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                刪除
+              </Button>
+            </Popconfirm>
+          )}
         </span>
       ),
     },

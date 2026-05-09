@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
 
 const router = Router();
@@ -105,7 +105,7 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   }
 }));
 
-router.delete('/:id', authenticateToken, asyncHandler(async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('ADMIN', 'ENGINEER'), asyncHandler(async (req, res) => {
   if (!validateIdParam(req.params.id)) {
     res.status(400).json({ error: '無效的 ID 參數' });
     return;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Tabs, Select, Space } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, FileExcelOutlined } from '@ant-design/icons';
 import client, { downloadReport } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import type { Product, Part, Series } from '../types';
 
 interface BOMItem {
@@ -12,6 +13,8 @@ interface BOMItem {
 }
 
 const ProductsPage: React.FC = () => {
+  const { user } = useAuth();
+  const canDelete = user?.role === 'ADMIN' || user?.role === 'ENGINEER';
   const [products, setProducts] = useState<Product[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [seriesList, setSeriesList] = useState<Series[]>([]);
@@ -126,11 +129,13 @@ const ProductsPage: React.FC = () => {
           >
             編輯
           </Button>
-          <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              刪除
-            </Button>
-          </Popconfirm>
+          {canDelete && (
+            <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                刪除
+              </Button>
+            </Popconfirm>
+          )}
         </span>
       ),
     },
@@ -204,21 +209,19 @@ const ProductsPage: React.FC = () => {
                     { title: '料號', render: (_: any, r: BOMItem) => r.part.partNumber },
                     { title: '名稱', render: (_: any, r: BOMItem) => r.part.name },
                     { title: '數量', dataIndex: 'quantity' },
-                    {
+                    ...(canDelete ? [{
                       title: '操作',
                       render: (_: any, r: BOMItem) => (
                         <Popconfirm title="移除？" onConfirm={() => removeBOM(r.partId)}>
-                          <Button type="link" danger>
-                            移除
-                          </Button>
+                          <Button type="link" danger>移除</Button>
                         </Popconfirm>
                       ),
-                    },
+                    }] : []),
                   ]}
                 />
               ),
             },
-            {
+            ...(canDelete ? [{
               key: 'add',
               label: '新增零件',
               children: (
@@ -242,7 +245,7 @@ const ProductsPage: React.FC = () => {
                   </Button>
                 </Form>
               ),
-            },
+            }] : []),
           ]}
         />
       </Modal>

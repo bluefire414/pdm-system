@@ -20,14 +20,8 @@ import batchUploadRoutes from './routes/batch-upload';
 
 // 啟動時驗證必要環境變數
 if (!process.env.JWT_SECRET) {
-  const isDev = process.env.NODE_ENV !== 'production';
-  if (isDev) {
-    console.warn('警告: 環境變數 JWT_SECRET 未設置，開發模式將使用預設值');
-    process.env.JWT_SECRET = 'pdm-system-secret-key-change-in-production';
-  } else {
-    console.error('錯誤: 環境變數 JWT_SECRET 未設置，應用無法啟動');
-    process.exit(1);
-  }
+  console.error('Fatal: JWT_SECRET is not set. Please configure it in .env');
+  process.exit(1);
 }
 
 const app = express();
