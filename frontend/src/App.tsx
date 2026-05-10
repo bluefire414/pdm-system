@@ -11,6 +11,9 @@ import SearchPage from './pages/SearchPage';
 import ECNsPage from './pages/ECNsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import UsersPage from './pages/UsersPage';
+import AuditLogsPage from './pages/AuditLogsPage';
+import WorkflowTemplatesPage from './pages/WorkflowTemplatesPage';
+import ECRsPage from './pages/ECRsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -39,6 +42,9 @@ const AppRoutes: React.FC = () => {
         <Route path="ecns" element={<ECNsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="admin/audit-logs" element={<AuditLogsPage />} />
+        <Route path="admin/workflow-templates" element={<WorkflowTemplatesPage />} />
+        <Route path="ecrs" element={<ECRsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

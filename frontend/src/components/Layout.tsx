@@ -11,6 +11,9 @@ import {
   LogoutOutlined,
   UserOutlined,
   KeyOutlined,
+  AuditOutlined,
+  BranchesOutlined,
+  FormOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -46,8 +49,13 @@ const Layout: React.FC = () => {
     { key: '/products', icon: <BuildOutlined />, label: '成品管理' },
     { key: '/documents', icon: <FileOutlined />, label: '文件中心' },
     { key: '/search', icon: <SearchOutlined />, label: '搜尋' },
+    { key: '/ecrs', icon: <FormOutlined />, label: 'ECR 變更申請' },
     { key: '/ecns', icon: <SwapOutlined />, label: 'ECN 變更' },
-    ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <UserOutlined />, label: '用戶管理' }] : []),
+    ...(user?.role === 'ADMIN' ? [
+      { key: '/users', icon: <UserOutlined />, label: '用戶管理' },
+      { key: '/admin/audit-logs', icon: <AuditOutlined />, label: '稽核日誌' },
+      { key: '/admin/workflow-templates', icon: <BranchesOutlined />, label: '審核流程' },
+    ] : []),
   ];
 
   const handleChangePassword = async (values: any) => {
