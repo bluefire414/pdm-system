@@ -148,7 +148,19 @@ const UsersPage: React.FC = () => {
             <Input disabled={!!editingUser} />
           </Form.Item>
           {!editingUser && (
-            <Form.Item name="password" label="密碼" rules={[{ required: true }]}>
+            <Form.Item
+              name="password"
+              label="密碼"
+              rules={[
+                { required: true, message: '請輸入密碼' },
+                { min: 8, message: '密碼至少 8 個字元' },
+                {
+                  pattern: /^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).+$/,
+                  message: '密碼需包含大寫、小寫字母及數字',
+                },
+              ]}
+              extra="至少 8 個字元，需包含大寫、小寫字母及數字"
+            >
               <Input.Password />
             </Form.Item>
           )}
