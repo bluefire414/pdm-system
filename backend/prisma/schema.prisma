@@ -39,25 +39,25 @@ model ProductSeries {
 }
 
 model Part {
-  id          String       @id @default(uuid())
-  partNumber  String       @unique
-  name        String
-  description String?
-  categoryId  String
-  category    PartCategory @relation(fields: [categoryId], references: [id])
-  documents   Document[]
-  productBOMs ProductBOM[]
+  id            String         @id @default(uuid())
+  partNumber    String         @unique
+  name          String
+  description   String?
+  categoryId    String
+  category      PartCategory   @relation(fields: [categoryId], references: [id])
+  documentParts DocumentPart[]
+  productBOMs   ProductBOM[]
 }
 
 model Product {
-  id          String        @id @default(uuid())
-  productCode String        @unique
-  name        String
-  description String?
-  seriesId    String
-  series      ProductSeries @relation(fields: [seriesId], references: [id])
-  boms        ProductBOM[]
-  documents   Document[]
+  id               String           @id @default(uuid())
+  productCode      String           @unique
+  name             String
+  description      String?
+  seriesId         String
+  series           ProductSeries    @relation(fields: [seriesId], references: [id])
+  boms             ProductBOM[]
+  documentProducts DocumentProduct[]
 }
 
 model ProductBOM {
@@ -80,29 +80,25 @@ model DocumentCategory {
 }
 
 model Document {
-  id           String   @id @default(uuid())
-  partId       String?
-  part         Part?    @relation(fields: [partId], references: [id])
-  productId    String?
-  product      Product? @relation(fields: [productId], references: [id])
+  id           String            @id @default(uuid())
   categoryId   String?
   category     DocumentCategory? @relation(fields: [categoryId], references: [id])
   documentType String
-  status       String   @default("DRAFT")
-  version      Int      @default(1)
+  status       String            @default("DRAFT")
+  version      Int               @default(1)
   remark       String?
   createdById  String
-  createdBy    User     @relation("CreatedBy", fields: [createdById], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdBy    User              @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
-  files DocumentFile[]
-  ecns  ECN[]
+  parts    DocumentPart[]
+  products DocumentProduct[]
+  files    DocumentFile[]
+  ecns     ECN[]
 
   @@index([status])
   @@index([createdById])
-  @@index([partId])
-  @@index([productId])
   @@index([categoryId])
 }
 
@@ -119,6 +115,30 @@ model DocumentFile {
   createdAt    DateTime @default(now())
 
   @@index([documentId])
+}
+
+model DocumentPart {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  partId     String
+  part       Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, partId])
+  @@index([documentId])
+  @@index([partId])
+}
+
+model DocumentProduct {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, productId])
+  @@index([documentId])
+  @@index([productId])
 }
 
 model ECN {

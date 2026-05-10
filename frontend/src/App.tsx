@@ -11,7 +11,6 @@ import SearchPage from './pages/SearchPage';
 import ECNsPage from './pages/ECNsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import UsersPage from './pages/UsersPage';
-import BatchUploadPage from './pages/BatchUploadPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -40,7 +39,6 @@ const AppRoutes: React.FC = () => {
         <Route path="ecns" element={<ECNsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="users" element={<UsersPage />} />
-        <Route path="batch-upload" element={<BatchUploadPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

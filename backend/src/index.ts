@@ -16,7 +16,6 @@ import ecnRoutes from './routes/ecns';
 import notificationRoutes from './routes/notifications';
 import statsRoutes from './routes/stats';
 import reportRoutes from './routes/reports';
-import batchUploadRoutes from './routes/batch-upload';
 import documentCategoryRoutes from './routes/document-categories';
 
 // 啟動時驗證必要環境變數
@@ -49,7 +48,6 @@ app.use('/api/ecns', ecnRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/reports', reportRoutes);
-app.use('/api/batch-upload', batchUploadRoutes);
 app.use('/api/document-categories', documentCategoryRoutes);
 
 // 健康檢查

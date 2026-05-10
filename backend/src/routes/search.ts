@@ -53,19 +53,27 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
     OR: [
       { remark: { contains: searchTerm } },
       {
-        part: {
-          OR: [
-            { partNumber: { contains: searchTerm } },
-            { name: { contains: searchTerm } },
-          ],
+        parts: {
+          some: {
+            part: {
+              OR: [
+                { partNumber: { contains: searchTerm } },
+                { name: { contains: searchTerm } },
+              ],
+            },
+          },
         },
       },
       {
-        product: {
-          OR: [
-            { productCode: { contains: searchTerm } },
-            { name: { contains: searchTerm } },
-          ],
+        products: {
+          some: {
+            product: {
+              OR: [
+                { productCode: { contains: searchTerm } },
+                { name: { contains: searchTerm } },
+              ],
+            },
+          },
         },
       },
     ],
@@ -78,8 +86,8 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
   const documents = await prisma.document.findMany({
     where: docWhere,
     include: {
-      part: { select: { partNumber: true, name: true } },
-      product: { select: { productCode: true, name: true } },
+      parts: { include: { part: { select: { partNumber: true, name: true } } } },
+      products: { include: { product: { select: { productCode: true, name: true } } } },
       files: true,
       createdBy: { select: { name: true } },
     },

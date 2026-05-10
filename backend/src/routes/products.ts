@@ -52,9 +52,9 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
           },
         },
       },
-      documents: {
-        include: { files: true },
-        orderBy: { createdAt: 'desc' },
+      documentProducts: {
+        include: { document: { include: { files: true } } },
+        orderBy: { document: { createdAt: 'desc' } },
       },
     },
   });

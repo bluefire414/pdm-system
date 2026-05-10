@@ -16,8 +16,8 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     include: {
       document: {
         include: {
-          part: { select: { partNumber: true, name: true } },
-          product: { select: { productCode: true, name: true } },
+          parts: { include: { part: { select: { partNumber: true, name: true } } } },
+          products: { include: { product: { select: { productCode: true, name: true } } } },
         },
       },
       reviewedBy: { select: { name: true } },
@@ -33,8 +33,8 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
     include: {
       document: {
         include: {
-          part: { select: { partNumber: true, name: true } },
-          product: { select: { productCode: true, name: true } },
+          parts: { include: { part: { select: { partNumber: true, name: true } } } },
+          products: { include: { product: { select: { productCode: true, name: true } } } },
           files: true,
         },
       },
@@ -66,8 +66,8 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
       include: {
         document: {
           include: {
-            part: { select: { partNumber: true, name: true } },
-            product: { select: { productCode: true, name: true } },
+            parts: { include: { part: { select: { partNumber: true, name: true } } } },
+            products: { include: { product: { select: { productCode: true, name: true } } } },
           },
         },
       },

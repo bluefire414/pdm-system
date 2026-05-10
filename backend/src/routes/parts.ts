@@ -46,9 +46,9 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
     where: { id: req.params.id },
     include: {
       category: true,
-      documents: {
-        include: { files: true },
-        orderBy: { createdAt: 'desc' },
+      documentParts: {
+        include: { document: { include: { files: true } } },
+        orderBy: { document: { createdAt: 'desc' } },
       },
     },
   });

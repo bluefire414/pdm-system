@@ -24,8 +24,8 @@ const STATUS_LABEL: Record<string, string> = {
 router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   const docs = await prisma.document.findMany({
     include: {
-      part: { select: { partNumber: true, name: true } },
-      product: { select: { productCode: true, name: true } },
+      parts: { include: { part: { select: { partNumber: true, name: true } } } },
+      products: { include: { product: { select: { productCode: true, name: true } } } },
       createdBy: { select: { name: true } },
       files: { select: { fileType: true, originalName: true } },
     },
@@ -33,8 +33,8 @@ router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest
   });
 
   const data = docs.map((d) => ({
-    '所屬料號/編碼': d.part?.partNumber || d.product?.productCode || '-',
-    '名稱': d.part?.name || d.product?.name || '-',
+    '所屬料號/編碼': d.parts.map((p) => p.part.partNumber).join(', ') || d.products.map((p) => p.product.productCode).join(', ') || '-',
+    '名稱': d.parts.map((p) => p.part.name).join(', ') || d.products.map((p) => p.product.name).join(', ') || '-',
     '文件類型': DOCUMENT_TYPE_LABEL[d.documentType] || d.documentType,
     '版本': `R${d.version}`,
     '狀態': STATUS_LABEL[d.status] || d.status,
@@ -107,8 +107,8 @@ router.get('/ecns', authenticateToken, asyncHandler(async (req: AuthRequest, res
     include: {
       document: {
         include: {
-          part: { select: { partNumber: true } },
-          product: { select: { productCode: true } },
+          parts: { include: { part: { select: { partNumber: true } } } },
+          products: { include: { product: { select: { productCode: true } } } },
         },
       },
       reviewedBy: { select: { name: true } },
@@ -121,7 +121,7 @@ router.get('/ecns', authenticateToken, asyncHandler(async (req: AuthRequest, res
     '標題': e.title,
     '說明': e.description,
     '狀態': e.status === 'PENDING' ? '待審核' : e.status === 'APPROVED' ? '已核准' : '已退回',
-    '關聯文件': `${DOCUMENT_TYPE_LABEL[e.document.documentType] || e.document.documentType} - ${e.document.part?.partNumber || e.document.product?.productCode || '-'}`,
+    '關聯文件': `${DOCUMENT_TYPE_LABEL[e.document.documentType] || e.document.documentType} - ${e.document.parts[0]?.part.partNumber || e.document.products[0]?.product.productCode || '-'}`,
     '審核人': e.reviewedBy?.name || '-',
     '建立時間': e.createdAt.toISOString().split('T')[0],
   }));

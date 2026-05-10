@@ -52,16 +52,15 @@ export interface Product {
 
 export interface DocumentItem {
   id: string;
-  title: string;
   documentType: string;
   status: string;
   version: number;
-  partId?: string;
-  productId?: string;
   categoryId?: string;
   createdById: string;
   createdAt: string;
   updatedAt: string;
+  parts: Array<{ partId: string; part: { id: string; partNumber: string; name: string } }>;
+  products: Array<{ productId: string; product: { id: string; productCode: string; name: string } }>;
   files?: DocumentFile[];
 }
 

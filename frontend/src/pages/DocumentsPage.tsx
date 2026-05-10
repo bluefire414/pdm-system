@@ -12,8 +12,21 @@ import type { UploadFile } from 'antd/es/upload/interface';
 import client, { downloadReport } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { DocumentCategory } from '../types';
+import ReleaseConflictModal, { type ConflictItem, type Reassignment } from '../components/ReleaseConflictModal';
 
 const { Search } = AntInput;
+
+// ── 本地型別 ─────────────────────────────────────────────────
+
+interface LinkedPart {
+  partId: string;
+  part: { id: string; partNumber: string; name: string };
+}
+
+interface LinkedProduct {
+  productId: string;
+  product: { id: string; productCode: string; name: string };
+}
 
 interface DocumentItem {
   id: string;
@@ -25,12 +38,12 @@ interface DocumentItem {
   categoryId: string | null;
   category: { id: string; name: string } | null;
   createdBy: { name: string };
-  part: { partNumber: string; name: string } | null;
-  product: { productCode: string; name: string } | null;
-  files: DocumentFile[];
+  parts: LinkedPart[];
+  products: LinkedProduct[];
+  files: DocumentFileItem[];
 }
 
-interface DocumentFile {
+interface DocumentFileItem {
   id: string;
   fileType: string;
   fileName: string;
@@ -41,6 +54,8 @@ interface DocumentFile {
 
 interface PartOption { id: string; partNumber: string; name: string; }
 interface ProductOption { id: string; productCode: string; name: string; }
+
+// ── 常數 ─────────────────────────────────────────────────────
 
 const DOCUMENT_TYPES = [
   { value: 'PART_DRAWING', label: '零部件圖紙' },
@@ -60,6 +75,24 @@ const STATUS_MAP: Record<string, { color: string; label: string }> = {
 const FILE_TYPE_LABEL: Record<string, string> = {
   DWG: 'DWG', PDF: 'PDF', THREE_D: '3D', THUMB: '縮圖', WORD: 'Word',
 };
+
+// ── 輔助函式 ──────────────────────────────────────────────────
+
+const isUnlinked = (doc: DocumentItem) =>
+  doc.parts.length === 0 && doc.products.length === 0;
+
+const renderOwner = (doc: DocumentItem) => {
+  const partTags = doc.parts.map((p) => (
+    <Tag key={p.partId} color="blue">{p.part.partNumber}</Tag>
+  ));
+  const productTags = doc.products.map((p) => (
+    <Tag key={p.productId} color="green">{p.product.productCode}</Tag>
+  ));
+  const all = [...partTags, ...productTags];
+  return all.length > 0 ? <Space wrap size={4}>{all}</Space> : <Tag color="default">未關聯</Tag>;
+};
+
+// ── 主元件 ───────────────────────────────────────────────────
 
 const DocumentsPage: React.FC = () => {
   const { user } = useAuth();
@@ -106,6 +139,12 @@ const DocumentsPage: React.FC = () => {
   const [linkingDoc, setLinkingDoc] = useState<DocumentItem | null>(null);
   const [linkTarget, setLinkTarget] = useState<'part' | 'product'>('part');
   const [linkForm] = Form.useForm();
+
+  // 發行衝突確認 modal
+  const [releasingDoc, setReleasingDoc] = useState<DocumentItem | null>(null);
+  const [releaseConflicts, setReleaseConflicts] = useState<ConflictItem[]>([]);
+
+  // ── 資料載入 ────────────────────────────────────────────────
 
   const fetchCategories = async () => {
     setCatLoading(true);
@@ -162,6 +201,8 @@ const DocumentsPage: React.FC = () => {
     fetchUnlinkedCount();
   }, []);
 
+  // ── 導覽 ────────────────────────────────────────────────────
+
   const handleSelectCategory = (cat: DocumentCategory) => {
     setSelectedCategory(cat);
     setDocSearch('');
@@ -187,7 +228,8 @@ const DocumentsPage: React.FC = () => {
     fetchUnlinkedCount();
   };
 
-  // --- 分類 CRUD ---
+  // ── 分類 CRUD ───────────────────────────────────────────────
+
   const handleCatSubmit = async (values: any) => {
     try {
       if (editingCat) {
@@ -216,10 +258,17 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // --- 文件 CRUD ---
+  // ── 文件 CRUD ───────────────────────────────────────────────
+
   const handleCreate = async (values: any) => {
     try {
-      await client.post('/documents', { ...values, categoryId: selectedCategory!.id });
+      await client.post('/documents', {
+        documentType: values.documentType,
+        partIds: values.partIds ?? [],
+        productIds: values.productIds ?? [],
+        remark: values.remark,
+        categoryId: selectedCategory!.id,
+      });
       message.success('文件建立成功');
       setModalVisible(false);
       form.resetFields();
@@ -229,21 +278,58 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
+  const refreshCurrentView = async (docId?: string) => {
+    if (viewingUnlinked) {
+      fetchUnlinkedDocs();
+    } else if (selectedCategory) {
+      fetchDocuments(selectedCategory.id, docSearch || undefined);
+    }
+    if (docId && detailModal?.id === docId) {
+      const res = await client.get(`/documents/${docId}`);
+      setDetailModal(res.data);
+    }
+  };
+
   const handleStatusChange = async (id: string, status: string) => {
     try {
       await client.put(`/documents/${id}/status`, { status });
       message.success('狀態更新成功');
-      if (viewingUnlinked) {
-        fetchUnlinkedDocs();
-      } else {
-        fetchDocuments(selectedCategory!.id, docSearch || undefined);
-      }
-      if (detailModal?.id === id) {
-        const res = await client.get(`/documents/${id}`);
-        setDetailModal(res.data);
-      }
+      refreshCurrentView(id);
     } catch (error: any) {
       message.error(error.response?.data?.error || '更新失敗');
+    }
+  };
+
+  // 發行前先查衝突，有衝突則彈出確認 modal
+  const handleRelease = async (doc: DocumentItem) => {
+    try {
+      const res = await client.get(`/documents/${doc.id}/release-conflicts`);
+      const conflicts: ConflictItem[] = res.data;
+      if (conflicts.length === 0) {
+        await handleStatusChange(doc.id, 'RELEASED');
+      } else {
+        setReleasingDoc(doc);
+        setReleaseConflicts(conflicts);
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '查詢衝突失敗');
+    }
+  };
+
+  const handleReleaseConfirm = async (reassignments: Reassignment[]) => {
+    if (!releasingDoc) return;
+    try {
+      await client.put(`/documents/${releasingDoc.id}/status`, {
+        status: 'RELEASED',
+        reassignments,
+      });
+      message.success('文件已發行');
+      const docId = releasingDoc.id;
+      setReleasingDoc(null);
+      setReleaseConflicts([]);
+      refreshCurrentView(docId);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '發行失敗');
     }
   };
 
@@ -265,16 +351,9 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // 快速上傳（未關聯）
   const handleBulkUpload = async () => {
-    if (!bulkDocType) {
-      message.warning('請先選擇文件類型');
-      return;
-    }
-    if (bulkFileList.length === 0) {
-      message.warning('請選擇要上傳的檔案');
-      return;
-    }
+    if (!bulkDocType) { message.warning('請先選擇文件類型'); return; }
+    if (bulkFileList.length === 0) { message.warning('請選擇要上傳的檔案'); return; }
     const formData = new FormData();
     bulkFileList.forEach((f) => { if (f.originFileObj) formData.append('files', f.originFileObj); });
     formData.append('documentType', bulkDocType);
@@ -285,8 +364,11 @@ const DocumentsPage: React.FC = () => {
       const { results } = res.data;
       const successCount = results.filter((r: any) => r.status === 'success').length;
       const errorCount = results.length - successCount;
-      if (successCount > 0) message.success(`成功上傳 ${successCount} 個檔案${errorCount > 0 ? `，${errorCount} 個失敗` : ''}`);
-      else message.error('所有檔案上傳失敗');
+      if (successCount > 0) {
+        message.success(`成功上傳 ${successCount} 個檔案${errorCount > 0 ? `，${errorCount} 個失敗` : ''}`);
+      } else {
+        message.error('所有檔案上傳失敗');
+      }
       setBulkUploadVisible(false);
       setBulkFileList([]);
       setBulkDocType('');
@@ -296,14 +378,13 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // 建立關聯
+  // 建立關聯（多選）
   const handleLink = async (values: any) => {
     if (!linkingDoc) return;
     try {
-      await client.put(`/documents/${linkingDoc.id}/link`, {
-        partId: linkTarget === 'part' ? values.targetId : undefined,
-        productId: linkTarget === 'product' ? values.targetId : undefined,
-      });
+      const partIds = linkTarget === 'part' ? values.targetIds : undefined;
+      const productIds = linkTarget === 'product' ? values.targetIds : undefined;
+      await client.put(`/documents/${linkingDoc.id}/link`, { partIds, productIds });
       message.success('關聯已建立');
       setLinkingDoc(null);
       linkForm.resetFields();
@@ -318,7 +399,8 @@ const DocumentsPage: React.FC = () => {
     fetchDocuments(selectedCategory!.id, value || undefined);
   };
 
-  const canPreview = (file: DocumentFile) => file.fileType === 'PDF' || file.fileType === 'THUMB';
+  const canPreview = (file: DocumentFileItem) =>
+    file.fileType === 'PDF' || file.fileType === 'THUMB';
   const canDownload = () => user?.role !== 'SALES';
 
   const filteredCategories = docCategories.filter((c) => {
@@ -327,15 +409,18 @@ const DocumentsPage: React.FC = () => {
     return c.code.toLowerCase().includes(kw) || c.name.toLowerCase().includes(kw);
   });
 
-  // 一般文件列表欄位
+  // ── 表格欄位定義 ────────────────────────────────────────────
+
   const docColumns = [
     {
       title: '所屬',
-      render: (_: any, r: DocumentItem) =>
-        r.part ? `${r.part.partNumber} - ${r.part.name}` :
-        r.product ? `${r.product.productCode} - ${r.product.name}` : '-',
+      render: (_: any, r: DocumentItem) => renderOwner(r),
     },
-    { title: '類型', dataIndex: 'documentType', render: (v: string) => DOCUMENT_TYPES.find((d) => d.value === v)?.label || v },
+    {
+      title: '類型',
+      dataIndex: 'documentType',
+      render: (v: string) => DOCUMENT_TYPES.find((d) => d.value === v)?.label || v,
+    },
     { title: '版本', dataIndex: 'version', render: (v: number) => `R${v}` },
     {
       title: '狀態',
@@ -355,13 +440,13 @@ const DocumentsPage: React.FC = () => {
           {r.status === 'DRAFT' && (
             <Button type="link" icon={<UploadOutlined />} onClick={() => { setUploadModal(r); setFileList([]); }}>上傳</Button>
           )}
-          {r.status === 'DRAFT' && (r.part || r.product) && (
+          {r.status === 'DRAFT' && !isUnlinked(r) && (
             <Button type="link" icon={<SendOutlined />} onClick={() => handleStatusChange(r.id, 'PENDING')}>送審</Button>
           )}
-          {r.status === 'PENDING' && user?.role === 'ADMIN' && (
-            <Button type="link" icon={<CheckOutlined />} onClick={() => handleStatusChange(r.id, 'RELEASED')}>發行</Button>
+          {r.status === 'PENDING' && isAdmin && (
+            <Button type="link" icon={<CheckOutlined />} onClick={() => handleRelease(r)}>發行</Button>
           )}
-          {r.status === 'RELEASED' && user?.role === 'ADMIN' && (
+          {r.status === 'RELEASED' && isAdmin && (
             <Popconfirm title="確定作廢？" onConfirm={() => handleStatusChange(r.id, 'OBSOLETE')}>
               <Button type="link" danger icon={<StopOutlined />}>作廢</Button>
             </Popconfirm>
@@ -371,12 +456,8 @@ const DocumentsPage: React.FC = () => {
     },
   ];
 
-  // 未關聯文件列表欄位
   const unlinkedColumns = [
-    {
-      title: '原始檔名',
-      render: (_: any, r: DocumentItem) => r.files[0]?.originalName || '-',
-    },
+    { title: '原始檔名', render: (_: any, r: DocumentItem) => r.files[0]?.originalName || '-' },
     {
       title: '格式',
       render: (_: any, r: DocumentItem) => {
@@ -418,7 +499,95 @@ const DocumentsPage: React.FC = () => {
     },
   ];
 
-  // ===== 未關聯檔案頁 =====
+  // ── 文件詳情 modal（共用）──────────────────────────────────
+
+  const renderDetailModal = () => (
+    <Modal
+      title="文件詳情"
+      open={!!detailModal}
+      onCancel={() => setDetailModal(null)}
+      footer={null}
+      width={700}
+    >
+      {detailModal && (
+        <>
+          <Descriptions bordered column={2}>
+            <Descriptions.Item label="類型">
+              {DOCUMENT_TYPES.find((d) => d.value === detailModal.documentType)?.label}
+            </Descriptions.Item>
+            <Descriptions.Item label="版本">R{detailModal.version}</Descriptions.Item>
+            <Descriptions.Item label="狀態">
+              <Tag color={STATUS_MAP[detailModal.status]?.color}>{STATUS_MAP[detailModal.status]?.label}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="建立者">{detailModal.createdBy.name}</Descriptions.Item>
+            <Descriptions.Item label="所屬料號/成品" span={2}>
+              {renderOwner(detailModal)}
+            </Descriptions.Item>
+            <Descriptions.Item label="建立時間" span={2}>
+              {new Date(detailModal.createdAt).toLocaleString()}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Divider />
+          <h4>檔案清單</h4>
+          {detailModal.files.length === 0 ? (
+            <Empty description="尚無檔案" />
+          ) : (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {detailModal.files.map((f) => (
+                <Card key={f.id} size="small">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <Tag>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                      <span>{f.originalName}</span>
+                      <span style={{ color: '#999', marginLeft: 8 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <Space>
+                      {canPreview(f) && (
+                        <Button type="link" icon={<EyeOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/preview`, '_blank')}>預覽</Button>
+                      )}
+                      {canDownload() && (
+                        <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/download`, '_blank')}>下載</Button>
+                      )}
+                    </Space>
+                  </div>
+                </Card>
+              ))}
+            </Space>
+          )}
+
+          <Divider />
+          <Space>
+            {detailModal.status === 'DRAFT' && !viewingUnlinked && (
+              <Button icon={<UploadOutlined />} onClick={() => { setDetailModal(null); setUploadModal(detailModal); setFileList([]); }}>上傳檔案</Button>
+            )}
+            {detailModal.status === 'DRAFT' && !isUnlinked(detailModal) && (
+              <Button icon={<SendOutlined />} onClick={() => handleStatusChange(detailModal.id, 'PENDING')}>送審</Button>
+            )}
+            {detailModal.status === 'PENDING' && isAdmin && (
+              <Button type="primary" icon={<CheckOutlined />} onClick={() => handleRelease(detailModal)}>發行</Button>
+            )}
+            {detailModal.status === 'RELEASED' && isAdmin && (
+              <Popconfirm title="確定作廢？" onConfirm={() => handleStatusChange(detailModal.id, 'OBSOLETE')}>
+                <Button danger icon={<StopOutlined />}>作廢</Button>
+              </Popconfirm>
+            )}
+            {viewingUnlinked && isUnlinked(detailModal) && (
+              <Button
+                icon={<LinkOutlined />}
+                onClick={() => { setDetailModal(null); setLinkingDoc(detailModal); setLinkTarget('part'); linkForm.resetFields(); }}
+              >
+                建立關聯
+              </Button>
+            )}
+          </Space>
+        </>
+      )}
+    </Modal>
+  );
+
+  // ── 未關聯檔案頁 ────────────────────────────────────────────
+
   if (viewingUnlinked) {
     return (
       <div>
@@ -472,13 +641,13 @@ const DocumentsPage: React.FC = () => {
                 <Button icon={<UploadOutlined />}>選擇檔案（可多選）</Button>
               </Upload>
               <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
-                格式自動判斷：.dwg → DWG、.pdf → PDF、.sldprt/.step/.stp/.iges → 3D、.jpg/.png → 縮圖、.doc/.docx → Word、其他保留原副檔名
+                格式自動判斷：.dwg → DWG、.pdf → PDF、.sldprt/.step/.stp → 3D、.jpg/.png → 縮圖、.doc/.docx → Word
               </div>
             </Form.Item>
           </Form>
         </Modal>
 
-        {/* 建立關聯 modal */}
+        {/* 建立關聯 modal（多選）*/}
         <Modal
           title={`建立關聯 — ${linkingDoc?.files[0]?.originalName || ''}`}
           open={!!linkingDoc}
@@ -490,19 +659,20 @@ const DocumentsPage: React.FC = () => {
             <Form.Item label="關聯類型">
               <Select
                 value={linkTarget}
-                onChange={(v) => { setLinkTarget(v); linkForm.setFieldValue('targetId', undefined); }}
+                onChange={(v) => { setLinkTarget(v); linkForm.setFieldValue('targetIds', []); }}
               >
                 <Select.Option value="part">零件</Select.Option>
                 <Select.Option value="product">成品</Select.Option>
               </Select>
             </Form.Item>
             <Form.Item
-              name="targetId"
-              label={linkTarget === 'part' ? '選擇零件' : '選擇成品'}
-              rules={[{ required: true, message: '請選擇' }]}
+              name="targetIds"
+              label={linkTarget === 'part' ? '選擇零件（可多選）' : '選擇成品（可多選）'}
+              rules={[{ required: true, message: '請至少選擇一項' }]}
             >
               {linkTarget === 'part' ? (
                 <Select
+                  mode="multiple"
                   showSearch
                   placeholder="輸入料號或名稱搜尋"
                   filterOption={(input, option) =>
@@ -512,6 +682,7 @@ const DocumentsPage: React.FC = () => {
                 />
               ) : (
                 <Select
+                  mode="multiple"
                   showSearch
                   placeholder="輸入成品編號或名稱搜尋"
                   filterOption={(input, option) =>
@@ -524,13 +695,13 @@ const DocumentsPage: React.FC = () => {
           </Form>
         </Modal>
 
-        {/* 文件詳情（共用） */}
         {renderDetailModal()}
       </div>
     );
   }
 
-  // ===== 分類卡片首頁 =====
+  // ── 分類卡片首頁 ─────────────────────────────────────────────
+
   if (!selectedCategory) {
     return (
       <div>
@@ -557,7 +728,6 @@ const DocumentsPage: React.FC = () => {
         </div>
 
         <Row gutter={[16, 16]} style={{ minHeight: 200 }}>
-          {/* 未關聯檔案特殊卡片 */}
           <Col xs={24} sm={12} md={8} lg={6}>
             <Card
               hoverable
@@ -649,7 +819,8 @@ const DocumentsPage: React.FC = () => {
     );
   }
 
-  // ===== 文件列表頁（鑽取後）=====
+  // ── 文件列表頁（鑽取後）────────────────────────────────────
+
   return (
     <div>
       <Breadcrumb
@@ -687,22 +858,40 @@ const DocumentsPage: React.FC = () => {
 
       <Table rowKey="id" columns={docColumns} dataSource={documents} loading={loading} />
 
-      {/* 新增文件 */}
-      <Modal title="新增文件" open={modalVisible} onOk={() => form.submit()} onCancel={() => setModalVisible(false)}>
+      {/* 新增文件 modal（多選料號/成品）*/}
+      <Modal
+        title="新增文件"
+        open={modalVisible}
+        onOk={() => form.submit()}
+        onCancel={() => setModalVisible(false)}
+      >
         <Form form={form} onFinish={handleCreate} layout="vertical">
           <Form.Item name="documentType" label="文件類型" rules={[{ required: true }]}>
             <Select options={DOCUMENT_TYPES} />
           </Form.Item>
-          <Form.Item label="歸屬">
-            <Space>
-              <Form.Item name="partId" noStyle>
-                <Select placeholder="選擇零件" allowClear style={{ width: 200 }} options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name}` }))} />
-              </Form.Item>
-              <span>或</span>
-              <Form.Item name="productId" noStyle>
-                <Select placeholder="選擇成品" allowClear style={{ width: 200 }} options={products.map((p) => ({ value: p.id, label: `${p.productCode} - ${p.name}` }))} />
-              </Form.Item>
-            </Space>
+          <Form.Item name="partIds" label="歸屬零件（可多選）">
+            <Select
+              mode="multiple"
+              showSearch
+              allowClear
+              placeholder="選擇零件"
+              filterOption={(input, option) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+              options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name}` }))}
+            />
+          </Form.Item>
+          <Form.Item name="productIds" label="歸屬成品（可多選）">
+            <Select
+              mode="multiple"
+              showSearch
+              allowClear
+              placeholder="選擇成品"
+              filterOption={(input, option) =>
+                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+              options={products.map((p) => ({ value: p.id, label: `${p.productCode} - ${p.name}` }))}
+            />
           </Form.Item>
           <Form.Item name="remark" label="備註">
             <Input.TextArea />
@@ -710,7 +899,7 @@ const DocumentsPage: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* 上傳檔案 */}
+      {/* 上傳檔案 modal */}
       <Modal
         title={`上傳檔案 - ${uploadModal?.documentType ? DOCUMENT_TYPES.find((d) => d.value === uploadModal.documentType)?.label : ''}`}
         open={!!uploadModal}
@@ -731,91 +920,17 @@ const DocumentsPage: React.FC = () => {
         </Upload>
       </Modal>
 
+      {/* 發行衝突確認 modal */}
+      <ReleaseConflictModal
+        open={!!releasingDoc}
+        conflicts={releaseConflicts}
+        onConfirm={handleReleaseConfirm}
+        onCancel={() => { setReleasingDoc(null); setReleaseConflicts([]); }}
+      />
+
       {renderDetailModal()}
     </div>
   );
-
-  // 文件詳情 modal（共用於分類檢視和未關聯檢視）
-  function renderDetailModal() {
-    return (
-      <Modal
-        title="文件詳情"
-        open={!!detailModal}
-        onCancel={() => setDetailModal(null)}
-        footer={null}
-        width={700}
-      >
-        {detailModal && (
-          <>
-            <Descriptions bordered column={2}>
-              <Descriptions.Item label="類型">{DOCUMENT_TYPES.find((d) => d.value === detailModal.documentType)?.label}</Descriptions.Item>
-              <Descriptions.Item label="版本">R{detailModal.version}</Descriptions.Item>
-              <Descriptions.Item label="狀態">
-                <Tag color={STATUS_MAP[detailModal.status]?.color}>{STATUS_MAP[detailModal.status]?.label}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="建立者">{detailModal.createdBy.name}</Descriptions.Item>
-              <Descriptions.Item label="所屬" span={2}>
-                {detailModal.part ? `${detailModal.part.partNumber} - ${detailModal.part.name}` :
-                 detailModal.product ? `${detailModal.product.productCode} - ${detailModal.product.name}` :
-                 <Tag color="default">未關聯</Tag>}
-              </Descriptions.Item>
-              <Descriptions.Item label="建立時間" span={2}>{new Date(detailModal.createdAt).toLocaleString()}</Descriptions.Item>
-            </Descriptions>
-            <Divider />
-            <h4>檔案清單</h4>
-            {detailModal.files.length === 0 ? <Empty description="尚無檔案" /> : (
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {detailModal.files.map((f) => (
-                  <Card key={f.id} size="small">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <Tag>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
-                        <span>{f.originalName}</span>
-                        <span style={{ color: '#999', marginLeft: 8 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>
-                      </div>
-                      <Space>
-                        {canPreview(f) && (
-                          <Button type="link" icon={<EyeOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/preview`, '_blank')}>預覽</Button>
-                        )}
-                        {canDownload() && (
-                          <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/download`, '_blank')}>下載</Button>
-                        )}
-                      </Space>
-                    </div>
-                  </Card>
-                ))}
-              </Space>
-            )}
-            <Divider />
-            <Space>
-              {detailModal.status === 'DRAFT' && !viewingUnlinked && (
-                <Button icon={<UploadOutlined />} onClick={() => { setDetailModal(null); setUploadModal(detailModal); setFileList([]); }}>上傳檔案</Button>
-              )}
-              {detailModal.status === 'DRAFT' && (detailModal.part || detailModal.product) && (
-                <Button icon={<SendOutlined />} onClick={() => handleStatusChange(detailModal.id, 'PENDING')}>送審</Button>
-              )}
-              {detailModal.status === 'PENDING' && user?.role === 'ADMIN' && (
-                <Button type="primary" icon={<CheckOutlined />} onClick={() => handleStatusChange(detailModal.id, 'RELEASED')}>發行</Button>
-              )}
-              {detailModal.status === 'RELEASED' && user?.role === 'ADMIN' && (
-                <Popconfirm title="確定作廢？" onConfirm={() => handleStatusChange(detailModal.id, 'OBSOLETE')}>
-                  <Button danger icon={<StopOutlined />}>作廢</Button>
-                </Popconfirm>
-              )}
-              {viewingUnlinked && !detailModal.part && !detailModal.product && (
-                <Button
-                  icon={<LinkOutlined />}
-                  onClick={() => { setDetailModal(null); setLinkingDoc(detailModal); setLinkTarget('part'); linkForm.resetFields(); }}
-                >
-                  建立關聯
-                </Button>
-              )}
-            </Space>
-          </>
-        )}
-      </Modal>
-    );
-  }
 };
 
 export default DocumentsPage;

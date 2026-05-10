@@ -32,4 +32,4 @@ EXPOSE 3001
 
 RUN mkdir -p /app/uploads
 
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm start"]
+CMD ["sh", "-c", "node dist/scripts/migrateDocumentRelations.js && npx prisma db push --accept-data-loss && npm start"]
