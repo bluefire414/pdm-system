@@ -77,11 +77,37 @@ const PERMISSION_MATRIX: Record<
   },
   [Roles.SALES]: {
     [DocumentTypes.PRODUCT_DRAWING]: {
-      [FileTypes.PDF]: { canView: true, canDownload: false },
-      [FileTypes.THUMB]: { canView: true, canDownload: false },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+      [FileTypes.THUMB]: { canView: true, canDownload: true },
     },
     [DocumentTypes.SPEC]: {
-      [FileTypes.PDF]: { canView: true, canDownload: false },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+    },
+  },
+  [Roles.DOC_CONTROL]: {
+    [DocumentTypes.PART_DRAWING]: {
+      [FileTypes.DWG]: { canView: true, canDownload: true },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+      [FileTypes.THREE_D]: { canView: true, canDownload: true },
+      [FileTypes.THUMB]: { canView: true, canDownload: true },
+    },
+    [DocumentTypes.PRODUCT_DRAWING]: {
+      [FileTypes.DWG]: { canView: true, canDownload: true },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+      [FileTypes.THREE_D]: { canView: true, canDownload: true },
+      [FileTypes.THUMB]: { canView: true, canDownload: true },
+    },
+    [DocumentTypes.SPEC]: {
+      [FileTypes.WORD]: { canView: true, canDownload: true },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+    },
+    [DocumentTypes.SOP]: {
+      [FileTypes.WORD]: { canView: true, canDownload: true },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
+    },
+    [DocumentTypes.QC]: {
+      [FileTypes.WORD]: { canView: true, canDownload: true },
+      [FileTypes.PDF]: { canView: true, canDownload: true },
     },
   },
 };

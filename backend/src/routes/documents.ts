@@ -522,8 +522,8 @@ router.get('/files/:fileId/:action', authenticateToken, asyncHandler(async (req:
 
   if (file.document.status === DocumentStatuses.DRAFT && file.document.createdById !== req.user!.id) {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    if (user?.role !== Roles.ADMIN) {
-      res.status(403).json({ error: '草稿僅建立者與主管可存取' });
+    if (user?.role !== Roles.ADMIN && user?.role !== Roles.DOC_CONTROL) {
+      res.status(403).json({ error: '草稿僅建立者、主管與文管人員可存取' });
       return;
     }
   }
@@ -553,8 +553,8 @@ router.delete('/files/:fileId', authenticateToken, asyncHandler(async (req: Auth
     return;
   }
 
-  // 僅文件建立者或 ADMIN 可刪除
-  if (file.document.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN) {
+  // 僅文件建立者、ADMIN 或 DOC_CONTROL 可刪除
+  if (file.document.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN && req.user!.role !== Roles.DOC_CONTROL) {
     res.status(403).json({ error: '無權刪除此檔案' });
     return;
   }
@@ -585,8 +585,8 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, r
     return;
   }
 
-  // 僅文件建立者或 ADMIN 可刪除，且狀態必須是 DRAFT 或 OBSOLETE
-  if (doc.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN) {
+  // 僅文件建立者、ADMIN 或 DOC_CONTROL 可刪除，且狀態必須是 DRAFT 或 OBSOLETE
+  if (doc.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN && req.user!.role !== Roles.DOC_CONTROL) {
     res.status(403).json({ error: '無權刪除此文件' });
     return;
   }

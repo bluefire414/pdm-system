@@ -12,12 +12,12 @@ const createUserSchema = z.object({
   username: z.string().min(3).max(50),
   password: passwordSchema,
   name: z.string().min(1).max(100),
-  role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES']),
+  role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES', 'DOC_CONTROL']),
 });
 
 const updateUserSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES']).optional(),
+  role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES', 'DOC_CONTROL']).optional(),
   isActive: z.boolean().optional(),
   password: passwordSchema.optional(),
 });

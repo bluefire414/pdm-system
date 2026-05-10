@@ -11,6 +11,7 @@ const ROLE_LABEL: Record<string, string> = {
   ENGINEER: '工程人員',
   MOLD: '模具人員',
   SALES: '業務人員',
+  DOC_CONTROL: '文管人員',
 };
 
 const ROLE_COLOR: Record<string, string> = {
@@ -18,6 +19,7 @@ const ROLE_COLOR: Record<string, string> = {
   ENGINEER: 'blue',
   MOLD: 'purple',
   SALES: 'green',
+  DOC_CONTROL: 'orange',
 };
 
 const UsersPage: React.FC = () => {
@@ -159,6 +161,7 @@ const UsersPage: React.FC = () => {
               { value: 'ENGINEER', label: '工程人員' },
               { value: 'MOLD', label: '模具人員' },
               { value: 'SALES', label: '業務人員' },
+              { value: 'DOC_CONTROL', label: '文管人員' },
             ]} />
           </Form.Item>
         </Form>

@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'ENGINEER' | 'MOLD' | 'SALES';
+export type UserRole = 'ADMIN' | 'ENGINEER' | 'MOLD' | 'SALES' | 'DOC_CONTROL';
 export type DocumentType = 'PART_DRAWING' | 'PRODUCT_DRAWING' | 'SPEC' | 'SOP' | 'QC';
 export type DocumentStatus = 'DRAFT' | 'PENDING' | 'RELEASED' | 'OBSOLETE';
 export type FileType = 'DWG' | 'PDF' | 'THREE_D' | 'THUMB' | 'WORD';

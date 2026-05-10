@@ -3,6 +3,7 @@ export const Roles = {
   ENGINEER: 'ENGINEER',
   MOLD: 'MOLD',
   SALES: 'SALES',
+  DOC_CONTROL: 'DOC_CONTROL',
 } as const;
 
 export type Role = (typeof Roles)[keyof typeof Roles];
