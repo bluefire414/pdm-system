@@ -19,17 +19,46 @@ import { asyncHandler } from '../lib/asyncHandler';
 
 const router = Router();
 
+// 依副檔名自動判斷 fileType
+function inferFileType(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  const mapping: Record<string, string> = {
+    '.dwg': 'DWG',
+    '.pdf': 'PDF',
+    '.sldprt': 'THREE_D',
+    '.sldasm': 'THREE_D',
+    '.step': 'THREE_D',
+    '.stp': 'THREE_D',
+    '.iges': 'THREE_D',
+    '.igs': 'THREE_D',
+    '.jpg': 'THUMB',
+    '.jpeg': 'THUMB',
+    '.png': 'THUMB',
+    '.gif': 'THUMB',
+    '.doc': 'WORD',
+    '.docx': 'WORD',
+  };
+  return mapping[ext] ?? (ext ? ext.replace('.', '').toUpperCase() : 'OTHER');
+}
+
 // 取得文件列表
 router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
-  const { type, partId, productId, status, keyword, categoryId } = req.query;
+  const { type, partId, productId, status, keyword, categoryId, unlinked } = req.query;
   const userRole = req.user!.role as Role;
 
   const where: any = {};
   if (type) where.documentType = String(type) as DocumentType;
-  if (partId) where.partId = String(partId);
-  if (productId) where.productId = String(productId);
   if (status) where.status = String(status) as DocumentStatus;
   if (categoryId) where.categoryId = String(categoryId);
+
+  if (unlinked === 'true') {
+    where.partId = null;
+    where.productId = null;
+  } else {
+    if (partId) where.partId = String(partId);
+    if (productId) where.productId = String(productId);
+  }
+
   if (keyword) {
     where.OR = [
       { remark: { contains: String(keyword) } },
@@ -64,7 +93,6 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
     orderBy: { createdAt: 'desc' },
   });
 
-  // 過濾掉使用者無權存取的文件類型
   const filtered = documents.filter((doc) =>
     canAccessDocument(userRole, doc.documentType)
   );
@@ -97,7 +125,6 @@ router.get('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, res)
     return;
   }
 
-  // 過濾檔案權限
   doc.files = doc.files.filter((file) => {
     const perm = getPermission(userRole, doc.documentType, file.fileType);
     return perm.canView;
@@ -106,7 +133,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, res)
   res.json(doc);
 }));
 
-// 建立文件（草稿）
+// 建立文件（草稿）— partId / productId 為選填，允許建立未關聯文件
 router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   try {
     const schema = z.object({
@@ -117,11 +144,6 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
       remark: z.string().optional(),
     });
     const data = schema.parse(req.body);
-
-    if (!data.partId && !data.productId) {
-      res.status(400).json({ error: '必須指定 partId 或 productId' });
-      return;
-    }
 
     const doc = await prisma.document.create({
       data: {
@@ -140,7 +162,67 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
   }
 }));
 
-// 上傳檔案到文件
+// 直接上傳未關聯檔案（先傳後關聯）
+router.post('/unlinked-upload', authenticateToken, upload.array('files', 50), asyncHandler(async (req: AuthRequest, res) => {
+  try {
+    const documentType = z
+      .enum(['PART_DRAWING', 'PRODUCT_DRAWING', 'SPEC', 'SOP', 'QC'])
+      .parse(req.body.documentType);
+
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: '未上傳檔案' });
+      return;
+    }
+
+    const results: any[] = [];
+    for (const file of files) {
+      try {
+        const fileType = inferFileType(file.originalname);
+        const safeSource = resolveUploadPath(file.path);
+
+        const doc = await prisma.document.create({
+          data: {
+            documentType,
+            createdById: req.user!.id,
+            status: DocumentStatuses.DRAFT,
+            version: 1,
+          },
+        });
+
+        const docFile = await prisma.documentFile.create({
+          data: {
+            documentId: doc.id,
+            fileType,
+            fileName: path.basename(file.path),
+            originalName: file.originalname,
+            filePath: safeSource,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+          },
+        });
+
+        results.push({
+          originalName: file.originalname,
+          fileType,
+          documentId: doc.id,
+          fileId: docFile.id,
+          status: 'success',
+        });
+      } catch (err: any) {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        results.push({ originalName: file.originalname, status: 'error', reason: err.message });
+      }
+    }
+
+    res.json({ total: files.length, results });
+  } catch (error: any) {
+    const isDev = process.env.NODE_ENV === 'development';
+    res.status(400).json({ error: '上傳失敗', ...(isDev ? { details: error.message } : {}) });
+  }
+}));
+
+// 上傳檔案到已有文件
 router.post('/:id/upload', authenticateToken, upload.array('files', 10), asyncHandler(async (req: AuthRequest, res) => {
   try {
     const doc = await prisma.document.findUnique({
@@ -211,7 +293,6 @@ router.put('/:id/status', authenticateToken, asyncHandler(async (req: AuthReques
       return;
     }
 
-    // 發行時將舊版文件作廢
     if (status === DocumentStatuses.RELEASED && doc.status !== DocumentStatuses.RELEASED) {
       await prisma.document.updateMany({
         where: {
@@ -234,6 +315,43 @@ router.put('/:id/status', authenticateToken, asyncHandler(async (req: AuthReques
   } catch (error: any) {
     const isDev = process.env.NODE_ENV === 'development';
     res.status(400).json({ error: '更新狀態失敗', ...(isDev ? { details: error.message } : {}) });
+  }
+}));
+
+// 建立文件關聯（將未關聯文件綁定到零件或成品）
+router.put('/:id/link', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  try {
+    const schema = z
+      .object({
+        partId: z.string().uuid().optional(),
+        productId: z.string().uuid().optional(),
+      })
+      .refine((d) => d.partId || d.productId, { message: '必須指定 partId 或 productId' });
+
+    const data = schema.parse(req.body);
+
+    const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+    if (!doc) {
+      res.status(404).json({ error: '文件不存在' });
+      return;
+    }
+    if (doc.partId || doc.productId) {
+      res.status(400).json({ error: '此文件已有關聯，無法重複關聯' });
+      return;
+    }
+
+    await prisma.document.update({
+      where: { id: req.params.id },
+      data: {
+        partId: data.partId ?? null,
+        productId: data.productId ?? null,
+      },
+    });
+
+    res.json({ message: '關聯已建立' });
+  } catch (error: any) {
+    const isDev = process.env.NODE_ENV === 'development';
+    res.status(400).json({ error: '建立關聯失敗', ...(isDev ? { details: error.message } : {}) });
   }
 }));
 
@@ -264,7 +382,6 @@ router.get('/files/:fileId/:action', authenticateToken, asyncHandler(async (req:
     return;
   }
 
-  // 檢查文件狀態
   if (file.document.status === DocumentStatuses.DRAFT && file.document.createdById !== req.user!.id) {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     if (user?.role !== Roles.ADMIN) {
