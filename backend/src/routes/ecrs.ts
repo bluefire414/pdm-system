@@ -215,13 +215,13 @@ router.put('/:id/submit', authenticateToken, asyncHandler(async (req: AuthReques
 
     // 通知所有 ADMIN
     const admins = await prisma.user.findMany({ where: { role: 'ADMIN', isActive: true } });
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: {
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
           userId: admin.id,
           title: '新的 ECR 待審核',
           message: `ECR ${ecr.ecrNumber}: ${ecr.title}`,
-        },
+        })),
       });
     }
 
@@ -380,13 +380,13 @@ router.put('/:id/convert', authenticateToken, asyncHandler(async (req: AuthReque
 
     // 通知 ADMIN 有新 ECN 待審核
     const admins = await prisma.user.findMany({ where: { role: 'ADMIN', isActive: true } });
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: {
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
           userId: admin.id,
           title: '新的 ECN 待審核',
           message: `ECN ${ecnNo}: ${ecr.title}（由 ECR ${ecr.ecrNumber} 轉換）`,
-        },
+        })),
       });
     }
 

@@ -33,9 +33,8 @@ const NotificationsPage: React.FC = () => {
     try {
       await client.put(`/notifications/${id}/read`);
       fetchNotifications();
-    } catch (error) {
+    } catch {
       message.error('標記失敗');
-      console.error(error);
     }
   };
 
@@ -43,9 +42,8 @@ const NotificationsPage: React.FC = () => {
     try {
       await client.put('/notifications/read-all');
       fetchNotifications();
-    } catch (error) {
+    } catch {
       message.error('標記失敗');
-      console.error(error);
     }
   };
 

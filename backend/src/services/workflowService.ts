@@ -83,39 +83,41 @@ export async function approveRecord(
   approverId: string,
   comment?: string,
 ): Promise<{ isLastStep: boolean; entityId: string }> {
-  const record = await prisma.approvalRecord.findUnique({
-    where: { id: recordId },
-    include: { step: true },
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.approvalRecord.findUnique({
+      where: { id: recordId },
+      include: { step: true },
+    });
+    if (!record) throw new Error('找不到審核記錄');
+    if (record.status !== 'PENDING') throw new Error('此記錄已非待審核狀態');
+
+    const approver = await tx.user.findUnique({ where: { id: approverId } });
+    if (!approver) throw new Error('找不到審核者');
+    if (approver.role !== record.step.approverRole) {
+      throw new Error(`此道審核（${record.step.name}）需要 ${record.step.approverRole} 角色才能操作`);
+    }
+
+    await tx.approvalRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'APPROVED',
+        approverId,
+        comment: comment || null,
+        actionAt: new Date(),
+      },
+    });
+
+    const nextPending = await tx.approvalRecord.findFirst({
+      where: {
+        entityType: record.entityType,
+        entityId: record.entityId,
+        status: 'PENDING',
+        order: { gt: record.order },
+      },
+    });
+
+    return { isLastStep: !nextPending, entityId: record.entityId };
   });
-  if (!record) throw new Error('找不到審核記錄');
-  if (record.status !== 'PENDING') throw new Error('此記錄已非待審核狀態');
-
-  const approver = await prisma.user.findUnique({ where: { id: approverId } });
-  if (!approver) throw new Error('找不到審核者');
-  if (approver.role !== record.step.approverRole) {
-    throw new Error(`此道審核（${record.step.name}）需要 ${record.step.approverRole} 角色才能操作`);
-  }
-
-  await prisma.approvalRecord.update({
-    where: { id: recordId },
-    data: {
-      status: 'APPROVED',
-      approverId,
-      comment: comment || null,
-      actionAt: new Date(),
-    },
-  });
-
-  const nextPending = await prisma.approvalRecord.findFirst({
-    where: {
-      entityType: record.entityType,
-      entityId: record.entityId,
-      status: 'PENDING',
-      order: { gt: record.order },
-    },
-  });
-
-  return { isLastStep: !nextPending, entityId: record.entityId };
 }
 
 /**
@@ -126,21 +128,21 @@ export async function rejectRecord(
   approverId: string,
   comment?: string,
 ): Promise<{ entityId: string }> {
-  const record = await prisma.approvalRecord.findUnique({
-    where: { id: recordId },
-    include: { step: true },
-  });
-  if (!record) throw new Error('找不到審核記錄');
-  if (record.status !== 'PENDING') throw new Error('此記錄已非待審核狀態');
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.approvalRecord.findUnique({
+      where: { id: recordId },
+      include: { step: true },
+    });
+    if (!record) throw new Error('找不到審核記錄');
+    if (record.status !== 'PENDING') throw new Error('此記錄已非待審核狀態');
 
-  const approver = await prisma.user.findUnique({ where: { id: approverId } });
-  if (!approver) throw new Error('找不到審核者');
-  if (approver.role !== record.step.approverRole) {
-    throw new Error(`此道審核（${record.step.name}）需要 ${record.step.approverRole} 角色才能操作`);
-  }
+    const approver = await tx.user.findUnique({ where: { id: approverId } });
+    if (!approver) throw new Error('找不到審核者');
+    if (approver.role !== record.step.approverRole) {
+      throw new Error(`此道審核（${record.step.name}）需要 ${record.step.approverRole} 角色才能操作`);
+    }
 
-  await prisma.$transaction([
-    prisma.approvalRecord.update({
+    await tx.approvalRecord.update({
       where: { id: recordId },
       data: {
         status: 'REJECTED',
@@ -148,8 +150,9 @@ export async function rejectRecord(
         comment: comment || null,
         actionAt: new Date(),
       },
-    }),
-    prisma.approvalRecord.updateMany({
+    });
+
+    await tx.approvalRecord.updateMany({
       where: {
         entityType: record.entityType,
         entityId: record.entityId,
@@ -157,10 +160,10 @@ export async function rejectRecord(
         order: { gt: record.order },
       },
       data: { status: 'CANCELLED' },
-    }),
-  ]);
+    });
 
-  return { entityId: record.entityId };
+    return { entityId: record.entityId };
+  });
 }
 
 /**

@@ -573,21 +573,22 @@ router.put('/:id/link', authenticateToken, asyncHandler(async (req: AuthRequest,
       return;
     }
 
-    for (const partId of data.partIds ?? []) {
-      await prisma.documentPart.upsert({
-        where: { documentId_partId: { documentId: req.params.id, partId } },
-        create: { documentId: req.params.id, partId },
-        update: {},
-      });
-    }
-
-    for (const productId of data.productIds ?? []) {
-      await prisma.documentProduct.upsert({
-        where: { documentId_productId: { documentId: req.params.id, productId } },
-        create: { documentId: req.params.id, productId },
-        update: {},
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      for (const partId of data.partIds ?? []) {
+        await tx.documentPart.upsert({
+          where: { documentId_partId: { documentId: req.params.id, partId } },
+          create: { documentId: req.params.id, partId },
+          update: {},
+        });
+      }
+      for (const productId of data.productIds ?? []) {
+        await tx.documentProduct.upsert({
+          where: { documentId_productId: { documentId: req.params.id, productId } },
+          create: { documentId: req.params.id, productId },
+          update: {},
+        });
+      }
+    });
 
     res.json({ message: '關聯已建立' });
   } catch (error: any) {

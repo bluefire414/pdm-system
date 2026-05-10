@@ -161,16 +161,22 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
 
     // 站內通知 + Email 給 ADMIN
     const admins = await prisma.user.findMany({ where: { role: 'ADMIN', isActive: true } });
-    for (const admin of admins) {
-      await prisma.notification.create({
-        data: { userId: admin.id, title: '新的 ECN 待審核', message: `ECN ${data.ecnNo}: ${data.title}` },
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
+          userId: admin.id,
+          title: '新的 ECN 待審核',
+          message: `ECN ${data.ecnNo}: ${data.title}`,
+        })),
       });
-      if (admin.email) {
-        sendEmail(
-          admin.email,
-          `[ECN] 新變更申請待審核：${data.ecnNo}`,
-          buildEcnCreatedEmail(data.ecnNo, data.title, data.description),
-        );
+      for (const admin of admins) {
+        if (admin.email) {
+          sendEmail(
+            admin.email,
+            `[ECN] 新變更申請待審核：${data.ecnNo}`,
+            buildEcnCreatedEmail(data.ecnNo, data.title, data.description),
+          );
+        }
       }
     }
 
