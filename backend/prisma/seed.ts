@@ -168,6 +168,23 @@ async function main() {
     },
   });
 
+  // WorkflowTemplate：ECR 預設一道 ADMIN 審核
+  const ecrTemplate = await prisma.workflowTemplate.findFirst({
+    where: { entityType: 'ECR', isActive: true },
+  });
+  if (!ecrTemplate) {
+    await prisma.workflowTemplate.create({
+      data: {
+        name: '標準 ECR 審核流程',
+        entityType: 'ECR',
+        isActive: true,
+        steps: {
+          create: [{ order: 1, name: 'ADMIN 審核', approverRole: 'ADMIN', isRequired: true }],
+        },
+      },
+    });
+  }
+
   console.log('Seed data 建立完成');
   console.log('用戶：');
   console.log('  admin / admin123 (ADMIN)');

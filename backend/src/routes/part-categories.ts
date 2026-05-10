@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
 import { validateIdParam } from '../lib/validators';
+import { writeAuditLog, getClientIp } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -59,13 +60,20 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   }
 }));
 
-router.delete('/:id', authenticateToken, asyncHandler(async (req, res) => {
+router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   if (!validateIdParam(req.params.id)) {
     res.status(400).json({ error: '無效的 ID 參數' });
     return;
   }
   try {
     await prisma.partCategory.delete({ where: { id: req.params.id } });
+    writeAuditLog({
+      userId: req.user!.id,
+      action: 'DELETE',
+      entity: 'PartCategory',
+      entityId: req.params.id,
+      ip: getClientIp(req),
+    });
     res.json({ message: '類別已刪除' });
   } catch (error: any) {
     const isDev = process.env.NODE_ENV === 'development';

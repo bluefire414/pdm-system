@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
 import { validateIdParam, passwordSchema } from '../lib/validators';
+import { writeAuditLog, getClientIp } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -111,13 +112,20 @@ router.put('/:id', authenticateToken, requireRole('ADMIN'), asyncHandler(async (
 }));
 
 // 刪除使用者 (僅 ADMIN)
-router.delete('/:id', authenticateToken, requireRole('ADMIN'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('ADMIN'), asyncHandler(async (req: AuthRequest, res) => {
   if (!validateIdParam(req.params.id)) {
     res.status(400).json({ error: '無效的 ID 參數' });
     return;
   }
   try {
     await prisma.user.delete({ where: { id: req.params.id } });
+    writeAuditLog({
+      userId: req.user!.id,
+      action: 'DELETE',
+      entity: 'User',
+      entityId: req.params.id,
+      ip: getClientIp(req),
+    });
     res.json({ message: '使用者已刪除' });
   } catch (error: any) {
     const isDev = process.env.NODE_ENV === 'development';

@@ -12,6 +12,7 @@ model User {
   username  String   @unique
   password  String
   name      String
+  email     String?
   role      String   @default("ENGINEER")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -20,6 +21,7 @@ model User {
   createdDocuments Document[]     @relation("CreatedBy")
   reviewedECNs     ECN[]          @relation("ReviewedBy")
   notifications    Notification[]
+  auditLogs        AuditLog[]
 
   @@index([role])
 }
@@ -102,6 +104,8 @@ model Document {
   products DocumentProduct[]
   files    DocumentFile[]
   ecns     ECN[]
+  versions DocumentVersion[]
+  ecrs     ECR[]
 
   @@index([status])
   @@index([documentType])
@@ -149,20 +153,36 @@ model DocumentProduct {
 }
 
 model ECN {
-  id           String   @id @default(uuid())
-  ecnNo        String   @unique
+  id           String    @id @default(uuid())
+  ecnNo        String    @unique
   title        String
   description  String
-  status       String   @default("PENDING")
+  status       String    @default("PENDING")
+  dueDate      DateTime?
   documentId   String
-  document     Document @relation(fields: [documentId], references: [id])
+  document     Document  @relation(fields: [documentId], references: [id])
   reviewedById String?
-  reviewedBy   User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  reviewedBy   User?     @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([status])
   @@index([documentId])
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version       Int
+  status        String
+  ecnId         String?
+  filesSnapshot String   // JSON 序列化，儲存快照當時所有 DocumentFile 的摘要
+  createdBy     String   // 操作者 userId
+  snapshotAt    DateTime @default(now())
+
+  @@index([documentId])
+  @@index([documentId, version])
 }
 
 model Notification {
@@ -176,4 +196,82 @@ model Notification {
 
   @@index([userId])
   @@index([isRead])
+}
+
+model ECR {
+  id          String   @id @default(uuid())
+  ecrNumber   String   @unique
+  title       String
+  description String?
+  reason      String?
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id])
+  requesterId String
+  status      String   @default("DRAFT")
+  ecnId       String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([requesterId])
+  @@index([status])
+}
+
+model WorkflowTemplate {
+  id         String         @id @default(uuid())
+  name       String
+  entityType String
+  isActive   Boolean        @default(true)
+  steps      WorkflowStep[]
+  createdAt  DateTime       @default(now())
+
+  @@index([entityType, isActive])
+}
+
+model WorkflowStep {
+  id              String           @id @default(uuid())
+  templateId      String
+  template        WorkflowTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  order           Int
+  name            String
+  approverRole    String
+  isRequired      Boolean          @default(true)
+  approvalRecords ApprovalRecord[]
+
+  @@unique([templateId, order])
+  @@index([templateId])
+}
+
+model ApprovalRecord {
+  id         String       @id @default(uuid())
+  entityType String
+  entityId   String
+  stepId     String
+  step       WorkflowStep @relation(fields: [stepId], references: [id])
+  order      Int
+  status     String       @default("PENDING")
+  approverId String?
+  comment    String?
+  actionAt   DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@index([entityType, entityId])
+  @@index([entityType, entityId, status])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  detail    String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
 }

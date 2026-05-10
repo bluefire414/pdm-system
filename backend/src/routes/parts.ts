@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
 import { sanitizeKeyword, validateIdParam } from '../lib/validators';
+import { writeAuditLog, getClientIp } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -101,13 +102,20 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   }
 }));
 
-router.delete('/:id', authenticateToken, requireRole('ADMIN', 'ENGINEER'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('ADMIN', 'ENGINEER'), asyncHandler(async (req: AuthRequest, res) => {
   if (!validateIdParam(req.params.id)) {
     res.status(400).json({ error: '無效的 ID 參數' });
     return;
   }
   try {
     await prisma.part.delete({ where: { id: req.params.id } });
+    writeAuditLog({
+      userId: req.user!.id,
+      action: 'DELETE',
+      entity: 'Part',
+      entityId: req.params.id,
+      ip: getClientIp(req),
+    });
     res.json({ message: '零件已刪除' });
   } catch (error: any) {
     const isDev = process.env.NODE_ENV === 'development';

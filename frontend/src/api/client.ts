@@ -28,6 +28,12 @@ client.interceptors.response.use(
   }
 );
 
+export const fetchDocumentHistory = (documentId: string) =>
+  client.get(`/documents/${documentId}/history`).then((r) => r.data);
+
+export const fetchDocumentVersionDetail = (documentId: string, version: number) =>
+  client.get(`/documents/${documentId}/history/${version}`).then((r) => r.data);
+
 export const downloadReport = async (type: string, filename: string) => {
   const res = await client.get(`/reports/${type}`, { responseType: 'blob' });
   const url = window.URL.createObjectURL(new Blob([res.data]));

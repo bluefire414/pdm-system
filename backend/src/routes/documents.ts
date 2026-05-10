@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import { upload, resolveUploadPath, UPLOAD_DIR, validateUploadedFile } from '../lib/upload';
 import { asyncHandler } from '../lib/asyncHandler';
+import { writeAuditLog, getClientIp } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -40,7 +41,7 @@ function inferFileType(filename: string): string {
 
 // ── 取得文件列表 ────────────────────────────────────────────
 router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
-  const { type, partId, productId, status, keyword, categoryId, unlinked } = req.query;
+  const { type, partId, productId, status, keyword, categoryId, unlinked, version } = req.query;
   const userRole = req.user!.role as Role;
   const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
   const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10) || 50));
@@ -49,6 +50,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
   if (type) where.documentType = String(type) as DocumentType;
   if (status) where.status = String(status) as DocumentStatus;
   if (categoryId) where.categoryId = String(categoryId);
+  if (version) { const v = Number(version); if (!isNaN(v) && v > 0) where.version = v; }
 
   if (unlinked === 'true') {
     where.parts = { none: {} };
@@ -147,6 +149,85 @@ router.get('/:id/release-conflicts', authenticateToken, asyncHandler(async (req:
   }));
 
   res.json(result);
+}));
+
+// ── 查詢文件版次歷史列表 ────────────────────────────────────────
+router.get('/:id/history', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  if (!doc) {
+    res.status(404).json({ error: '文件不存在' });
+    return;
+  }
+
+  const versions = await prisma.documentVersion.findMany({
+    where: { documentId: req.params.id },
+    select: {
+      id: true,
+      version: true,
+      status: true,
+      snapshotAt: true,
+      ecnId: true,
+      createdBy: true,
+    },
+    orderBy: { version: 'asc' },
+  });
+
+  res.json(versions);
+}));
+
+// ── 比對兩個版次的附檔差異 ─────────────────────────────────────
+router.get('/:id/history/diff', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const v1Num = parseInt(String(req.query.v1), 10);
+  const v2Num = parseInt(String(req.query.v2), 10);
+
+  if (isNaN(v1Num) || isNaN(v2Num) || v1Num === v2Num) {
+    res.status(400).json({ error: '需提供不同的 v1 與 v2 版次號' });
+    return;
+  }
+
+  const [snap1, snap2] = await Promise.all([
+    prisma.documentVersion.findFirst({ where: { documentId: req.params.id, version: v1Num } }),
+    prisma.documentVersion.findFirst({ where: { documentId: req.params.id, version: v2Num } }),
+  ]);
+
+  if (!snap1) { res.status(404).json({ error: `版次 ${v1Num} 不存在` }); return; }
+  if (!snap2) { res.status(404).json({ error: `版次 ${v2Num} 不存在` }); return; }
+
+  const files1: Array<{ id: string; fileName: string; fileType: string; fileSize?: number; originalName?: string }> = JSON.parse(snap1.filesSnapshot);
+  const files2: Array<{ id: string; fileName: string; fileType: string; fileSize?: number; originalName?: string }> = JSON.parse(snap2.filesSnapshot);
+
+  const key = (f: { fileName: string; fileType: string }) => `${f.fileType}::${f.fileName}`;
+  const map1 = new Map(files1.map((f) => [key(f), f]));
+  const map2 = new Map(files2.map((f) => [key(f), f]));
+
+  const added = files2.filter((f) => !map1.has(key(f)));
+  const removed = files1.filter((f) => !map2.has(key(f)));
+  const unchanged = files2.filter((f) => map1.has(key(f)));
+
+  res.json({ v1: v1Num, v2: v2Num, added, removed, unchanged });
+}));
+
+// ── 查詢指定版次快照詳情 ────────────────────────────────────────
+router.get('/:id/history/:version', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const versionNum = parseInt(req.params.version, 10);
+  if (isNaN(versionNum)) {
+    res.status(400).json({ error: '無效的版次號' });
+    return;
+  }
+
+  const snapshot = await prisma.documentVersion.findFirst({
+    where: { documentId: req.params.id, version: versionNum },
+  });
+
+  if (!snapshot) {
+    res.status(404).json({ error: '版次快照不存在' });
+    return;
+  }
+
+  res.json({
+    ...snapshot,
+    filesSnapshot: JSON.parse(snapshot.filesSnapshot),
+  });
 }));
 
 // ── 取得單一文件 ────────────────────────────────────────────
@@ -300,6 +381,11 @@ router.post('/:id/upload', authenticateToken, upload.array('files', 10), asyncHa
       return;
     }
 
+    if (doc.status === DocumentStatuses.RELEASED || doc.status === DocumentStatuses.PENDING) {
+      res.status(400).json({ error: '已發行或審核中的文件不可修改附檔，請先提交 ECN' });
+      return;
+    }
+
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       res.status(400).json({ error: '未上傳檔案' });
@@ -340,6 +426,14 @@ router.post('/:id/upload', authenticateToken, upload.array('files', 10), asyncHa
         },
       });
       createdFiles.push(docFile);
+      writeAuditLog({
+        userId: req.user!.id,
+        action: 'CREATE',
+        entity: 'DocumentFile',
+        entityId: docFile.id,
+        detail: { documentId: doc.id, fileType, fileName, originalName: file.originalname },
+        ip: getClientIp(req),
+      });
     }
 
     res.json(createdFiles);
@@ -440,6 +534,15 @@ router.put('/:id/status', authenticateToken, asyncHandler(async (req: AuthReques
         where: { id: req.params.id },
         data: { status },
       });
+    });
+
+    writeAuditLog({
+      userId: req.user!.id,
+      action: 'STATUS_CHANGE',
+      entity: 'Document',
+      entityId: req.params.id,
+      detail: { from: doc.status, to: status },
+      ip: getClientIp(req),
     });
 
     res.json({ message: '狀態已更新' });
@@ -553,6 +656,11 @@ router.delete('/files/:fileId', authenticateToken, asyncHandler(async (req: Auth
     return;
   }
 
+  if (file.document.status === DocumentStatuses.RELEASED || file.document.status === DocumentStatuses.PENDING) {
+    res.status(400).json({ error: '已發行或審核中的文件不可修改附檔，請先提交 ECN' });
+    return;
+  }
+
   // 僅文件建立者、ADMIN 或 DOC_CONTROL 可刪除
   if (file.document.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN && req.user!.role !== Roles.DOC_CONTROL) {
     res.status(403).json({ error: '無權刪除此檔案' });
@@ -569,6 +677,15 @@ router.delete('/files/:fileId', authenticateToken, asyncHandler(async (req: Auth
     // 磁碟刪除失敗不影響 API 成功回應，僅 console 記錄
     console.warn(`[DocumentFile] 磁碟檔案刪除失敗：${file.filePath}`);
   }
+
+  writeAuditLog({
+    userId: req.user!.id,
+    action: 'DELETE',
+    entity: 'DocumentFile',
+    entityId: req.params.fileId,
+    detail: { documentId: file.documentId, fileName: file.fileName, fileType: file.fileType },
+    ip: getClientIp(req),
+  });
 
   res.json({ message: '附檔已刪除' });
 }));
@@ -608,6 +725,15 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, r
 
   // 再刪 DB（cascade 會自動刪除 DocumentFile 記錄）
   await prisma.document.delete({ where: { id: req.params.id } });
+
+  writeAuditLog({
+    userId: req.user!.id,
+    action: 'DELETE',
+    entity: 'Document',
+    entityId: req.params.id,
+    detail: { documentType: doc.documentType, status: doc.status, version: doc.version, deletedFiles: doc.files.length },
+    ip: getClientIp(req),
+  });
 
   res.json({ message: '文件已刪除', deletedFiles: doc.files.length });
 }));

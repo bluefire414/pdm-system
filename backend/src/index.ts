@@ -3,7 +3,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import cron from 'node-cron';
 import { errorHandler } from './middleware/errorHandler';
+import { prisma } from './lib/prisma';
+import { sendEmail, buildEcnDueSoonEmail } from './services/emailService';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -18,6 +21,9 @@ import notificationRoutes from './routes/notifications';
 import statsRoutes from './routes/stats';
 import reportRoutes from './routes/reports';
 import documentCategoryRoutes from './routes/document-categories';
+import auditLogRoutes from './routes/audit-logs';
+import workflowTemplateRoutes from './routes/workflow-templates';
+import ecrRoutes from './routes/ecrs';
 
 // 啟動時驗證必要環境變數
 if (!process.env.JWT_SECRET) {
@@ -50,6 +56,9 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/document-categories', documentCategoryRoutes);
+app.use('/api/admin/audit-logs', auditLogRoutes);
+app.use('/api/admin/workflow-templates', workflowTemplateRoutes);
+app.use('/api/ecrs', ecrRoutes);
 
 // 健康檢查
 app.get('/api/health', (req, res) => {
@@ -65,3 +74,46 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`PDM 伺服器執行於 http://localhost:${PORT}`);
 });
+
+// 每天早上 9 點檢查 3 天後到期的 PENDING ECN 並寄送提醒給 ADMIN
+cron.schedule('0 9 * * *', async () => {
+  try {
+    const now = new Date();
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() + 3);
+    // 取目標日的起點與終點
+    const dayStart = new Date(targetDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(targetDate);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const dueSoonEcns = await prisma.eCN.findMany({
+      where: {
+        status: 'PENDING',
+        dueDate: { gte: dayStart, lte: dayEnd },
+      },
+    });
+
+    if (dueSoonEcns.length === 0) return;
+
+    const admins = await prisma.user.findMany({
+      where: { role: 'ADMIN', isActive: true, email: { not: null } },
+      select: { email: true },
+    });
+
+    for (const ecn of dueSoonEcns) {
+      for (const admin of admins) {
+        if (admin.email) {
+          sendEmail(
+            admin.email,
+            `[提醒] ECN ${ecn.ecnNo} 將於 3 天後逾期`,
+            buildEcnDueSoonEmail(ecn.ecnNo, ecn.title, ecn.dueDate!),
+          );
+        }
+      }
+    }
+    console.log(`[Cron] 發送 ${dueSoonEcns.length} 份 ECN 逾期提醒`);
+  } catch (err) {
+    console.error('[Cron] ECN 逾期提醒執行失敗', err);
+  }
+}, { timezone: 'Asia/Taipei' });

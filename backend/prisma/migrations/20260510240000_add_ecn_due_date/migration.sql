@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "ECN" ADD COLUMN "dueDate" TIMESTAMP(3);

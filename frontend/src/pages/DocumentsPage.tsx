@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
   Table, Button, Modal, Form, Select, Input, message, Popconfirm, Tag, Upload,
-  Descriptions, Empty, Card, Space, Divider, Row, Col, Input as AntInput, Breadcrumb,
+  Descriptions, Empty, Card, Space, Divider, Row, Col, Input as AntInput, InputNumber, Breadcrumb, Tabs,
 } from 'antd';
 import {
   PlusOutlined, EyeOutlined, DownloadOutlined, SendOutlined, CheckOutlined,
   StopOutlined, UploadOutlined, FileExcelOutlined, FileOutlined, ArrowLeftOutlined,
-  EditOutlined, DeleteOutlined, LinkOutlined, InboxOutlined,
+  EditOutlined, DeleteOutlined, LinkOutlined, InboxOutlined, HistoryOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
-import client, { downloadReport } from '../api/client';
+import client, { downloadReport, fetchDocumentHistory, fetchDocumentVersionDetail } from '../api/client';
+import type { DocumentVersion } from '../types';
 import { useAuth } from '../context/AuthContext';
 import type { DocumentCategory } from '../types';
 import ReleaseConflictModal, { type ConflictItem, type Reassignment } from '../components/ReleaseConflictModal';
@@ -115,6 +116,7 @@ const DocumentsPage: React.FC = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [docSearch, setDocSearch] = useState('');
+  const [docVersion, setDocVersion] = useState<number | null>(null);
   const [docPage, setDocPage] = useState(1);
   const [docPageSize, setDocPageSize] = useState(50);
   const [docTotal, setDocTotal] = useState(0);
@@ -147,6 +149,18 @@ const DocumentsPage: React.FC = () => {
   const [releasingDoc, setReleasingDoc] = useState<DocumentItem | null>(null);
   const [releaseConflicts, setReleaseConflicts] = useState<ConflictItem[]>([]);
 
+  // 版次歷史
+  const [detailActiveTab, setDetailActiveTab] = useState<string>('overview');
+  const [docHistory, setDocHistory] = useState<DocumentVersion[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // 版次差異比較
+  interface DiffFile { id: string; fileName: string; fileType: string; fileSize?: number; originalName?: string; }
+  interface DiffResult { v1: number; v2: number; added: DiffFile[]; removed: DiffFile[]; unchanged: DiffFile[]; }
+  const [diffModal, setDiffModal] = useState<{ visible: boolean; loading: boolean; result: DiffResult | null }>({
+    visible: false, loading: false, result: null,
+  });
+
   // ── 資料載入 ────────────────────────────────────────────────
 
   const fetchCategories = async () => {
@@ -177,11 +191,15 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  const fetchDocuments = async (categoryId: string, keyword?: string, page = 1, pageSize = 50) => {
+  const fetchDocuments = async (categoryId: string, keyword?: string, page = 1, pageSize = 50, version?: number | null) => {
     setLoading(true);
     try {
       const res = await client.get('/documents', {
-        params: { categoryId, page, pageSize, ...(keyword ? { keyword } : {}) },
+        params: {
+          categoryId, page, pageSize,
+          ...(keyword ? { keyword } : {}),
+          ...(version != null ? { version } : {}),
+        },
       });
       setDocuments(res.data.data);
       setDocTotal(res.data.total);
@@ -200,6 +218,39 @@ const DocumentsPage: React.FC = () => {
     setProducts(prodRes.data.data);
   };
 
+  const fetchHistory = async (docId: string) => {
+    setHistoryLoading(true);
+    try {
+      const list: Array<{ version: number }> = await fetchDocumentHistory(docId);
+      if (list.length === 0) { setDocHistory([]); return; }
+      const details: DocumentVersion[] = await Promise.all(
+        list.map((item) => fetchDocumentVersionDetail(docId, item.version))
+      );
+      setDocHistory(details);
+    } catch {
+      setDocHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleDiff = async (docId: string, v1: number, v2: number) => {
+    setDiffModal({ visible: true, loading: true, result: null });
+    try {
+      const res = await client.get(`/documents/${docId}/history/diff`, { params: { v1, v2 } });
+      setDiffModal({ visible: true, loading: false, result: res.data });
+    } catch {
+      setDiffModal({ visible: false, loading: false, result: null });
+      message.error('取得差異失敗');
+    }
+  };
+
+  const handleCloseDetail = () => {
+    setDetailModal(null);
+    setDocHistory(null);
+    setDetailActiveTab('overview');
+  };
+
   useEffect(() => {
     fetchCategories();
     fetchOptions();
@@ -211,6 +262,7 @@ const DocumentsPage: React.FC = () => {
   const handleSelectCategory = (cat: DocumentCategory) => {
     setSelectedCategory(cat);
     setDocSearch('');
+    setDocVersion(null);
     fetchDocuments(cat.id);
   };
 
@@ -218,6 +270,7 @@ const DocumentsPage: React.FC = () => {
     setSelectedCategory(null);
     setDocuments([]);
     setDocSearch('');
+    setDocVersion(null);
     fetchCategories();
     fetchUnlinkedCount();
   };
@@ -287,7 +340,7 @@ const DocumentsPage: React.FC = () => {
     if (viewingUnlinked) {
       fetchUnlinkedDocs();
     } else if (selectedCategory) {
-      fetchDocuments(selectedCategory.id, docSearch || undefined);
+      fetchDocuments(selectedCategory.id, docSearch || undefined, docPage, docPageSize, docVersion);
     }
     if (docId && detailModal?.id === docId) {
       const res = await client.get(`/documents/${docId}`);
@@ -402,7 +455,13 @@ const DocumentsPage: React.FC = () => {
   const handleDocSearch = (value: string) => {
     setDocSearch(value);
     setDocPage(1);
-    fetchDocuments(selectedCategory!.id, value || undefined, 1, docPageSize);
+    fetchDocuments(selectedCategory!.id, value || undefined, 1, docPageSize, docVersion);
+  };
+
+  const handleVersionFilter = (value: number | null) => {
+    setDocVersion(value);
+    setDocPage(1);
+    fetchDocuments(selectedCategory!.id, docSearch || undefined, 1, docPageSize, value);
   };
 
   const canPreview = (file: DocumentFileItem) =>
@@ -442,7 +501,7 @@ const DocumentsPage: React.FC = () => {
       title: '操作',
       render: (_: any, r: DocumentItem) => (
         <Space>
-          <Button type="link" onClick={() => setDetailModal(r)}>詳情</Button>
+          <Button type="link" onClick={() => { setDetailModal(r); setDocHistory(null); setDetailActiveTab('overview'); }}>詳情</Button>
           {r.status === 'DRAFT' && (
             <Button type="link" icon={<UploadOutlined />} onClick={() => { setUploadModal(r); setFileList([]); }}>上傳</Button>
           )}
@@ -492,7 +551,7 @@ const DocumentsPage: React.FC = () => {
       title: '操作',
       render: (_: any, r: DocumentItem) => (
         <Space>
-          <Button type="link" onClick={() => setDetailModal(r)}>詳情</Button>
+          <Button type="link" onClick={() => { setDetailModal(r); setDocHistory(null); setDetailActiveTab('overview'); }}>詳情</Button>
           <Button
             type="link"
             icon={<LinkOutlined />}
@@ -507,90 +566,302 @@ const DocumentsPage: React.FC = () => {
 
   // ── 文件詳情 modal（共用）──────────────────────────────────
 
-  const renderDetailModal = () => (
-    <Modal
-      title="文件詳情"
-      open={!!detailModal}
-      onCancel={() => setDetailModal(null)}
-      footer={null}
-      width={700}
-    >
-      {detailModal && (
-        <>
-          <Descriptions bordered column={2}>
-            <Descriptions.Item label="類型">
-              {DOCUMENT_TYPES.find((d) => d.value === detailModal.documentType)?.label}
-            </Descriptions.Item>
-            <Descriptions.Item label="版本">R{detailModal.version}</Descriptions.Item>
-            <Descriptions.Item label="狀態">
-              <Tag color={STATUS_MAP[detailModal.status]?.color}>{STATUS_MAP[detailModal.status]?.label}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="建立者">{detailModal.createdBy.name}</Descriptions.Item>
-            <Descriptions.Item label="所屬料號/成品" span={2}>
-              {renderOwner(detailModal)}
-            </Descriptions.Item>
-            <Descriptions.Item label="建立時間" span={2}>
-              {new Date(detailModal.createdAt).toLocaleString()}
-            </Descriptions.Item>
-          </Descriptions>
+  const renderDetailModal = () => {
+    const doc = detailModal;
+    if (!doc) return null;
 
-          <Divider />
-          <h4>檔案清單</h4>
-          {detailModal.files.length === 0 ? (
-            <Empty description="尚無檔案" />
-          ) : (
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {detailModal.files.map((f) => (
-                <Card key={f.id} size="small">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <Tag>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
-                      <span>{f.originalName}</span>
-                      <span style={{ color: '#999', marginLeft: 8 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <Space>
-                      {canPreview(f) && (
-                        <Button type="link" icon={<EyeOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/preview`, '_blank')}>預覽</Button>
-                      )}
-                      {canDownload() && (
-                        <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/download`, '_blank')}>下載</Button>
-                      )}
-                    </Space>
+    const isLocked = doc.status === 'RELEASED' || doc.status === 'PENDING';
+
+    const overviewContent = (
+      <>
+        <Descriptions bordered column={2} size="small">
+          <Descriptions.Item label="類型">
+            {DOCUMENT_TYPES.find((d) => d.value === doc.documentType)?.label}
+          </Descriptions.Item>
+          <Descriptions.Item label="版本">R{doc.version}</Descriptions.Item>
+          <Descriptions.Item label="狀態">
+            <Tag color={STATUS_MAP[doc.status]?.color}>{STATUS_MAP[doc.status]?.label}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="建立者">{doc.createdBy.name}</Descriptions.Item>
+          <Descriptions.Item label="所屬料號/成品" span={2}>
+            {renderOwner(doc)}
+          </Descriptions.Item>
+          <Descriptions.Item label="建立時間" span={2}>
+            {new Date(doc.createdAt).toLocaleString()}
+          </Descriptions.Item>
+        </Descriptions>
+
+        <Divider />
+        <h4>檔案清單</h4>
+        {doc.files.length === 0 ? (
+          <Empty description="尚無檔案" />
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {doc.files.map((f) => (
+              <Card key={f.id} size="small">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <Tag>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                    <span>{f.originalName}</span>
+                    <span style={{ color: '#999', marginLeft: 8 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>
                   </div>
-                </Card>
-              ))}
-            </Space>
-          )}
+                  <Space>
+                    {canPreview(f) && (
+                      <Button type="link" icon={<EyeOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/preview`, '_blank')}>預覽</Button>
+                    )}
+                    {canDownload() && (
+                      <Button type="link" icon={<DownloadOutlined />} onClick={() => window.open(`/api/documents/files/${f.id}/download`, '_blank')}>下載</Button>
+                    )}
+                  </Space>
+                </div>
+              </Card>
+            ))}
+          </Space>
+        )}
 
-          <Divider />
+        <Divider />
+        <Space wrap>
+          {doc.status === 'DRAFT' && !viewingUnlinked && (
+            <Button
+              icon={<UploadOutlined />}
+              onClick={() => { const d = doc; handleCloseDetail(); setUploadModal(d); setFileList([]); }}
+            >
+              上傳檔案
+            </Button>
+          )}
+          {isLocked && (
+            <span style={{ color: '#bbb', fontSize: 12, alignSelf: 'center' }}>
+              已發行文件如需修改，請先提交 ECN
+            </span>
+          )}
+          {doc.status === 'DRAFT' && !isUnlinked(doc) && (
+            <Button icon={<SendOutlined />} onClick={() => handleStatusChange(doc.id, 'PENDING')}>送審</Button>
+          )}
+          {doc.status === 'PENDING' && isAdmin && (
+            <Button type="primary" icon={<CheckOutlined />} onClick={() => handleRelease(doc)}>發行</Button>
+          )}
+          {doc.status === 'RELEASED' && isAdmin && (
+            <Popconfirm title="確定作廢？" onConfirm={() => handleStatusChange(doc.id, 'OBSOLETE')}>
+              <Button danger icon={<StopOutlined />}>作廢</Button>
+            </Popconfirm>
+          )}
+          {viewingUnlinked && isUnlinked(doc) && (
+            <Button
+              icon={<LinkOutlined />}
+              onClick={() => { const d = doc; handleCloseDetail(); setLinkingDoc(d); setLinkTarget('part'); linkForm.resetFields(); }}
+            >
+              建立關聯
+            </Button>
+          )}
+        </Space>
+      </>
+    );
+
+    const historyContent = (
+      <>
+        <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0' }}>
           <Space>
-            {detailModal.status === 'DRAFT' && !viewingUnlinked && (
-              <Button icon={<UploadOutlined />} onClick={() => { setDetailModal(null); setUploadModal(detailModal); setFileList([]); }}>上傳檔案</Button>
-            )}
-            {detailModal.status === 'DRAFT' && !isUnlinked(detailModal) && (
-              <Button icon={<SendOutlined />} onClick={() => handleStatusChange(detailModal.id, 'PENDING')}>送審</Button>
-            )}
-            {detailModal.status === 'PENDING' && isAdmin && (
-              <Button type="primary" icon={<CheckOutlined />} onClick={() => handleRelease(detailModal)}>發行</Button>
-            )}
-            {detailModal.status === 'RELEASED' && isAdmin && (
-              <Popconfirm title="確定作廢？" onConfirm={() => handleStatusChange(detailModal.id, 'OBSOLETE')}>
-                <Button danger icon={<StopOutlined />}>作廢</Button>
-              </Popconfirm>
-            )}
-            {viewingUnlinked && isUnlinked(detailModal) && (
-              <Button
-                icon={<LinkOutlined />}
-                onClick={() => { setDetailModal(null); setLinkingDoc(detailModal); setLinkTarget('part'); linkForm.resetFields(); }}
-              >
-                建立關聯
-              </Button>
+            <span style={{ color: '#666', fontSize: 13 }}>目前版本：</span>
+            <Tag color="blue">R{doc.version}</Tag>
+            <Tag color={STATUS_MAP[doc.status]?.color}>{STATUS_MAP[doc.status]?.label}</Tag>
+            {docHistory !== null && docHistory.length === 0 && (
+              <span style={{ color: '#aaa', fontSize: 12 }}>尚未有歷史快照</span>
             )}
           </Space>
-        </>
-      )}
-    </Modal>
-  );
+        </div>
+
+        <Table<DocumentVersion>
+          rowKey="id"
+          size="small"
+          dataSource={docHistory ?? []}
+          loading={historyLoading}
+          pagination={false}
+          locale={{
+            emptyText: historyLoading ? '載入中…' : '尚無版次快照（文件未曾通過 ECN 核准）',
+          }}
+          expandable={{
+            expandedRowRender: (record) =>
+              record.filesSnapshot.length === 0 ? (
+                <div style={{ padding: '8px 24px', color: '#aaa' }}>此版次無附檔記錄</div>
+              ) : (
+                <Space direction="vertical" style={{ width: '100%', padding: '8px 24px' }}>
+                  {record.filesSnapshot.map((f) => (
+                    <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        <Tag>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                        <span style={{ fontSize: 13 }}>{f.originalName ?? f.fileName}</span>
+                        {f.fileSize != null && (
+                          <span style={{ color: '#bbb', fontSize: 12 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>
+                        )}
+                      </Space>
+                      {(f.fileType === 'PDF' || f.fileType === 'THUMB') && (
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => window.open(`/api/documents/files/${f.id}/preview`, '_blank')}
+                        >
+                          檢視
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </Space>
+              ),
+          }}
+          columns={[
+            {
+              title: '版次',
+              dataIndex: 'version',
+              width: 80,
+              render: (v: number) => <strong>R{v}</strong>,
+            },
+            {
+              title: '快照狀態',
+              dataIndex: 'status',
+              width: 100,
+              render: (v: string) => (
+                <Tag color={STATUS_MAP[v]?.color}>{STATUS_MAP[v]?.label ?? v}</Tag>
+              ),
+            },
+            {
+              title: '快照時間',
+              dataIndex: 'snapshotAt',
+              render: (v: string) => new Date(v).toLocaleString('zh-TW'),
+            },
+            {
+              title: '觸發 ECN',
+              dataIndex: 'ecnId',
+              width: 140,
+              render: (v: string | null) =>
+                v ? (
+                  <Tag color="purple" style={{ fontFamily: 'monospace' }}>{v.substring(0, 8)}…</Tag>
+                ) : (
+                  <span style={{ color: '#ccc' }}>—</span>
+                ),
+            },
+            {
+              title: '',
+              key: 'diff',
+              width: 120,
+              render: (_: any, record: DocumentVersion, index: number) => {
+                if (index === (docHistory?.length ?? 0) - 1) return null;
+                const prevVersion = docHistory![index + 1].version;
+                return (
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => handleDiff(doc.id, prevVersion, record.version)}
+                  >
+                    與上一版比較
+                  </Button>
+                );
+              },
+            },
+          ]}
+        />
+      </>
+    );
+
+    const diffResult = diffModal.result;
+    const diffModalEl = (
+      <Modal
+        title={diffResult ? `版次差異：R${diffResult.v1} → R${diffResult.v2}` : '載入中…'}
+        open={diffModal.visible}
+        onCancel={() => setDiffModal({ visible: false, loading: false, result: null })}
+        footer={null}
+        width={580}
+      >
+        {diffModal.loading && <div style={{ textAlign: 'center', padding: 32 }}>比對中…</div>}
+        {diffResult && (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {diffResult.added.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, color: '#52c41a', marginBottom: 6 }}>
+                  ＋ 新增（{diffResult.added.length} 個）
+                </div>
+                {diffResult.added.map((f) => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, marginBottom: 4 }}>
+                    <Tag color="green" style={{ minWidth: 44, textAlign: 'center' }}>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                    <span style={{ color: '#52c41a', fontSize: 13 }}>{f.originalName ?? f.fileName}</span>
+                    {f.fileSize != null && <span style={{ color: '#b7eb8f', fontSize: 12 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {diffResult.removed.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, color: '#ff4d4f', marginBottom: 6 }}>
+                  － 移除（{diffResult.removed.length} 個）
+                </div>
+                {diffResult.removed.map((f) => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fff2f0', borderRadius: 4, marginBottom: 4 }}>
+                    <Tag color="red" style={{ minWidth: 44, textAlign: 'center' }}>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                    <span style={{ color: '#ff4d4f', fontSize: 13, textDecoration: 'line-through' }}>{f.originalName ?? f.fileName}</span>
+                    {f.fileSize != null && <span style={{ color: '#ffccc7', fontSize: 12 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {diffResult.unchanged.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, color: '#8c8c8c', marginBottom: 6 }}>
+                  ＝ 不變（{diffResult.unchanged.length} 個）
+                </div>
+                {diffResult.unchanged.map((f) => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fafafa', borderRadius: 4, marginBottom: 4 }}>
+                    <Tag style={{ minWidth: 44, textAlign: 'center' }}>{FILE_TYPE_LABEL[f.fileType] || f.fileType}</Tag>
+                    <span style={{ color: '#8c8c8c', fontSize: 13 }}>{f.originalName ?? f.fileName}</span>
+                    {f.fileSize != null && <span style={{ color: '#d9d9d9', fontSize: 12 }}>({(f.fileSize / 1024).toFixed(1)} KB)</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {diffResult.added.length === 0 && diffResult.removed.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 16 }}>兩版次附檔完全相同</div>
+            )}
+          </Space>
+        )}
+      </Modal>
+    );
+
+    return (
+      <>
+      <Modal
+        title="文件詳情"
+        open={!!detailModal}
+        onCancel={handleCloseDetail}
+        footer={null}
+        width={700}
+        destroyOnClose
+      >
+        <Tabs
+          activeKey={detailActiveTab}
+          onChange={(key) => {
+            setDetailActiveTab(key);
+            if (key === 'history' && docHistory === null) {
+              fetchHistory(doc.id);
+            }
+          }}
+          items={[
+            { key: 'overview', label: '概要', children: overviewContent },
+            {
+              key: 'history',
+              label: (
+                <span>
+                  <HistoryOutlined style={{ marginRight: 4 }} />
+                  版次歷史
+                </span>
+              ),
+              children: historyContent,
+            },
+          ]}
+        />
+      </Modal>
+      {diffModalEl}
+      </>
+    );
+  };
 
   // ── 未關聯檔案頁 ────────────────────────────────────────────
 
@@ -842,6 +1113,14 @@ const DocumentsPage: React.FC = () => {
           <h2 style={{ margin: 0 }}>{selectedCategory.name} <Tag color="orange">{selectedCategory.code}</Tag></h2>
         </Space>
         <Space>
+          <InputNumber
+            placeholder="版次號，例如 3"
+            min={1}
+            precision={0}
+            style={{ width: 148 }}
+            value={docVersion}
+            onChange={handleVersionFilter}
+          />
           <Search
             placeholder="搜尋關鍵字..."
             allowClear
@@ -876,7 +1155,7 @@ const DocumentsPage: React.FC = () => {
           onChange: (p, ps) => {
             setDocPage(p);
             setDocPageSize(ps);
-            fetchDocuments(selectedCategory!.id, docSearch || undefined, p, ps);
+            fetchDocuments(selectedCategory!.id, docSearch || undefined, p, ps, docVersion);
           },
         }}
       />

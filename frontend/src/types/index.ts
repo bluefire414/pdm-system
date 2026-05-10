@@ -91,11 +91,43 @@ export interface PaginatedResponse<T> {
   pageSize: number;
 }
 
+export interface DocumentVersionFile {
+  id: string;
+  fileName: string;
+  originalName?: string;
+  fileType: string;
+  fileSize?: number;
+  filePath?: string;
+}
+
+export interface DocumentVersion {
+  id: string;
+  documentId: string;
+  version: number;
+  status: string;
+  ecnId: string | null;
+  createdBy: string;
+  snapshotAt: string;
+  filesSnapshot: DocumentVersionFile[];
+}
+
 export interface NotificationItem {
   id: string;
   title: string;
   message: string;  // 修正：後端欄位為 message，非 content
   isRead: boolean;
   userId: string;
+  createdAt: string;
+}
+
+export interface AuditLogItem {
+  id: string;
+  userId: string;
+  user?: { id: string; username: string; name: string; role: string };
+  action: string;
+  entity: string;
+  entityId: string;
+  detail: Record<string, any> | null;
+  ip: string | null;
   createdAt: string;
 }
