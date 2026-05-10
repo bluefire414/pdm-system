@@ -13,6 +13,7 @@ export interface Series {
   code: string;
   name: string;
   description?: string;
+  _count?: { products: number };
 }
 
 export interface PartCategory {
@@ -20,6 +21,15 @@ export interface PartCategory {
   code: string;
   name: string;
   description?: string;
+  _count?: { parts: number };
+}
+
+export interface DocumentCategory {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  _count?: { documents: number };
 }
 
 export interface Part {
@@ -48,6 +58,7 @@ export interface DocumentItem {
   version: number;
   partId?: string;
   productId?: string;
+  categoryId?: string;
   createdById: string;
   createdAt: string;
   updatedAt: string;

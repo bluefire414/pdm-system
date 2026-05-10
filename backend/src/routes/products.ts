@@ -21,7 +21,9 @@ function validateIdParam(id: string): boolean {
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const keyword = sanitizeKeyword(req.query.keyword);
+  const { seriesId } = req.query;
   const where: any = {};
+  if (seriesId) where.seriesId = String(seriesId);
   if (keyword) {
     where.OR = [
       { productCode: { contains: keyword } },

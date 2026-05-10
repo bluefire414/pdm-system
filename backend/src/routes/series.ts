@@ -13,6 +13,7 @@ function validateIdParam(id: string): boolean {
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const series = await prisma.productSeries.findMany({
     orderBy: { code: 'asc' },
+    include: { _count: { select: { products: true } } },
   });
   res.json(series);
 }));

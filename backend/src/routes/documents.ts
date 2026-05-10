@@ -21,7 +21,7 @@ const router = Router();
 
 // 取得文件列表
 router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
-  const { type, partId, productId, status, keyword } = req.query;
+  const { type, partId, productId, status, keyword, categoryId } = req.query;
   const userRole = req.user!.role as Role;
 
   const where: any = {};
@@ -29,6 +29,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
   if (partId) where.partId = String(partId);
   if (productId) where.productId = String(productId);
   if (status) where.status = String(status) as DocumentStatus;
+  if (categoryId) where.categoryId = String(categoryId);
   if (keyword) {
     where.OR = [
       { remark: { contains: String(keyword) } },
@@ -56,6 +57,7 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
     include: {
       part: { select: { partNumber: true, name: true } },
       product: { select: { productCode: true, name: true } },
+      category: { select: { id: true, name: true } },
       files: true,
       createdBy: { select: { name: true } },
     },
@@ -111,6 +113,7 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
       documentType: z.enum(['PART_DRAWING', 'PRODUCT_DRAWING', 'SPEC', 'SOP', 'QC']),
       partId: z.string().uuid().optional(),
       productId: z.string().uuid().optional(),
+      categoryId: z.string().uuid().optional(),
       remark: z.string().optional(),
     });
     const data = schema.parse(req.body);

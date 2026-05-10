@@ -71,12 +71,22 @@ model ProductBOM {
   @@unique([productId, partId])
 }
 
+model DocumentCategory {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  description String?
+  documents   Document[]
+}
+
 model Document {
   id           String   @id @default(uuid())
   partId       String?
   part         Part?    @relation(fields: [partId], references: [id])
   productId    String?
   product      Product? @relation(fields: [productId], references: [id])
+  categoryId   String?
+  category     DocumentCategory? @relation(fields: [categoryId], references: [id])
   documentType String
   status       String   @default("DRAFT")
   version      Int      @default(1)
@@ -93,6 +103,7 @@ model Document {
   @@index([createdById])
   @@index([partId])
   @@index([productId])
+  @@index([categoryId])
 }
 
 model DocumentFile {
