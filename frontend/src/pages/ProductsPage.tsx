@@ -40,6 +40,9 @@ const ProductsPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(50);
+  const [productTotal, setProductTotal] = useState(0);
   const [allParts, setAllParts] = useState<Part[]>([]);
 
   // 成品 CRUD modal
@@ -63,13 +66,15 @@ const ProductsPage: React.FC = () => {
     }
   };
 
-  const fetchProducts = async (seriesId: string, keyword?: string) => {
+  const fetchProducts = async (seriesId: string, keyword?: string, page = 1, pageSize = 50) => {
     setProductsLoading(true);
     try {
       const res = await client.get('/products', {
-        params: { seriesId, ...(keyword ? { keyword } : {}) },
+        params: { seriesId, page, pageSize, ...(keyword ? { keyword } : {}) },
       });
-      setProducts(res.data);
+      setProducts(res.data.data);
+      setProductTotal(res.data.total);
+      setProductPage(res.data.page);
     } finally {
       setProductsLoading(false);
     }
@@ -77,7 +82,7 @@ const ProductsPage: React.FC = () => {
 
   useEffect(() => {
     fetchSeries();
-    client.get('/parts').then((r) => setAllParts(r.data));
+    client.get('/parts', { params: { pageSize: 200 } }).then((r) => setAllParts(r.data.data));
   }, []);
 
   const handleSelectSeries = (s: Series) => {
@@ -153,7 +158,8 @@ const ProductsPage: React.FC = () => {
 
   const handleProductSearch = (value: string) => {
     setProductSearch(value);
-    fetchProducts(selectedSeries!.id, value || undefined);
+    setProductPage(1);
+    fetchProducts(selectedSeries!.id, value || undefined, 1, productPageSize);
   };
 
   // --- BOM ---
@@ -358,7 +364,24 @@ const ProductsPage: React.FC = () => {
         </Space>
       </div>
 
-      <Table rowKey="id" columns={productColumns} dataSource={products} loading={productsLoading} />
+      <Table
+        rowKey="id"
+        columns={productColumns}
+        dataSource={products}
+        loading={productsLoading}
+        pagination={{
+          current: productPage,
+          pageSize: productPageSize,
+          total: productTotal,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 筆`,
+          onChange: (p, ps) => {
+            setProductPage(p);
+            setProductPageSize(ps);
+            fetchProducts(selectedSeries!.id, productSearch || undefined, p, ps);
+          },
+        }}
+      />
 
       {/* 成品 CRUD Modal */}
       <Modal

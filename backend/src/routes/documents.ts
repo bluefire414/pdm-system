@@ -12,7 +12,7 @@ import {
 } from '../lib/constants';
 import path from 'path';
 import fs from 'fs';
-import { upload, resolveUploadPath, UPLOAD_DIR } from '../lib/upload';
+import { upload, resolveUploadPath, UPLOAD_DIR, validateUploadedFile } from '../lib/upload';
 import { asyncHandler } from '../lib/asyncHandler';
 
 const router = Router();
@@ -42,6 +42,8 @@ function inferFileType(filename: string): string {
 router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   const { type, partId, productId, status, keyword, categoryId, unlinked } = req.query;
   const userRole = req.user!.role as Role;
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10) || 50));
 
   const where: any = {};
   if (type) where.documentType = String(type) as DocumentType;
@@ -65,20 +67,32 @@ router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =>
     ];
   }
 
-  const documents = await prisma.document.findMany({
-    where,
-    include: {
-      parts: { include: { part: { select: { id: true, partNumber: true, name: true } } } },
-      products: { include: { product: { select: { id: true, productCode: true, name: true } } } },
-      category: { select: { id: true, name: true } },
-      files: true,
-      createdBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  // 角色可見的文件類型過濾加入 where，避免撈出後再過濾（效能優化）
+  const accessibleTypes = ['PART_DRAWING', 'PRODUCT_DRAWING', 'SPEC', 'SOP', 'QC'].filter(
+    (t) => canAccessDocument(userRole, t as DocumentType)
+  );
+  if (!where.documentType) {
+    where.documentType = { in: accessibleTypes };
+  }
 
-  const filtered = documents.filter((doc) => canAccessDocument(userRole, doc.documentType));
-  res.json(filtered);
+  const [total, documents] = await Promise.all([
+    prisma.document.count({ where }),
+    prisma.document.findMany({
+      where,
+      include: {
+        parts: { include: { part: { select: { id: true, partNumber: true, name: true } } } },
+        products: { include: { product: { select: { id: true, productCode: true, name: true } } } },
+        category: { select: { id: true, name: true } },
+        files: true,
+        createdBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  res.json({ data: documents, total, page, pageSize });
 }));
 
 // ── 查詢發行前衝突文件（前端確認彈窗用） ──────────────────────
@@ -225,6 +239,7 @@ router.post('/unlinked-upload', authenticateToken, upload.array('files', 50), as
     const results: any[] = [];
     for (const file of files) {
       try {
+        validateUploadedFile(file); // 驗證副檔名白名單與 magic bytes
         const fileType = inferFileType(file.originalname);
         const safeSource = resolveUploadPath(file.path);
 
@@ -304,6 +319,7 @@ router.post('/:id/upload', authenticateToken, upload.array('files', 10), asyncHa
 
     const createdFiles: any[] = [];
     for (const file of files) {
+      validateUploadedFile(file); // 驗證副檔名白名單與 magic bytes
       const ext = path.extname(file.originalname);
       const fileName = `${ownerCode}_${docTypeCode}_${versionStr}_${fileType}${ext}`;
       const newPath = path.join(UPLOAD_DIR, fileName);
@@ -333,6 +349,14 @@ router.post('/:id/upload', authenticateToken, upload.array('files', 10), asyncHa
   }
 }));
 
+// 合法的狀態轉換路徑（單向，不可逆）
+const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
+  DRAFT:    [DocumentStatuses.PENDING, DocumentStatuses.OBSOLETE],
+  PENDING:  [DocumentStatuses.RELEASED, DocumentStatuses.OBSOLETE],
+  RELEASED: [DocumentStatuses.OBSOLETE],
+  OBSOLETE: [], // 終態，不可再轉換
+};
+
 // ── 更新文件狀態（送審/發行/作廢）──────────────────────────
 router.put('/:id/status', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   try {
@@ -357,53 +381,65 @@ router.put('/:id/status', authenticateToken, asyncHandler(async (req: AuthReques
       return;
     }
 
-    if (status === DocumentStatuses.RELEASED && reassignments?.length) {
-      const affectedSourceIds = new Set<string>();
-
-      for (const r of reassignments) {
-        affectedSourceIds.add(r.fromDocumentId);
-
-        if (r.partId) {
-          await prisma.documentPart.deleteMany({
-            where: { documentId: r.fromDocumentId, partId: r.partId },
-          });
-          await prisma.documentPart.upsert({
-            where: { documentId_partId: { documentId: req.params.id, partId: r.partId } },
-            create: { documentId: req.params.id, partId: r.partId },
-            update: {},
-          });
-        }
-
-        if (r.productId) {
-          await prisma.documentProduct.deleteMany({
-            where: { documentId: r.fromDocumentId, productId: r.productId },
-          });
-          await prisma.documentProduct.upsert({
-            where: { documentId_productId: { documentId: req.params.id, productId: r.productId } },
-            create: { documentId: req.params.id, productId: r.productId },
-            update: {},
-          });
-        }
-      }
-
-      // 若來源文件已無任何關聯，自動設為作廢
-      for (const sourceId of affectedSourceIds) {
-        const [pCount, prodCount] = await Promise.all([
-          prisma.documentPart.count({ where: { documentId: sourceId } }),
-          prisma.documentProduct.count({ where: { documentId: sourceId } }),
-        ]);
-        if (pCount === 0 && prodCount === 0) {
-          await prisma.document.update({
-            where: { id: sourceId },
-            data: { status: DocumentStatuses.OBSOLETE },
-          });
-        }
-      }
+    // 狀態機驗證：確認轉換合法
+    const allowedNext = VALID_STATUS_TRANSITIONS[doc.status] ?? [];
+    if (!allowedNext.includes(status)) {
+      res.status(400).json({
+        error: `不合法的狀態轉換：${doc.status} → ${status}`,
+        allowedTransitions: allowedNext,
+      });
+      return;
     }
 
-    await prisma.document.update({
-      where: { id: req.params.id },
-      data: { status },
+    await prisma.$transaction(async (tx) => {
+      if (status === DocumentStatuses.RELEASED && reassignments?.length) {
+        const affectedSourceIds = new Set<string>();
+
+        for (const r of reassignments) {
+          affectedSourceIds.add(r.fromDocumentId);
+
+          if (r.partId) {
+            await tx.documentPart.deleteMany({
+              where: { documentId: r.fromDocumentId, partId: r.partId },
+            });
+            await tx.documentPart.upsert({
+              where: { documentId_partId: { documentId: req.params.id, partId: r.partId } },
+              create: { documentId: req.params.id, partId: r.partId },
+              update: {},
+            });
+          }
+
+          if (r.productId) {
+            await tx.documentProduct.deleteMany({
+              where: { documentId: r.fromDocumentId, productId: r.productId },
+            });
+            await tx.documentProduct.upsert({
+              where: { documentId_productId: { documentId: req.params.id, productId: r.productId } },
+              create: { documentId: req.params.id, productId: r.productId },
+              update: {},
+            });
+          }
+        }
+
+        // 若來源文件已無任何關聯，自動設為作廢
+        for (const sourceId of affectedSourceIds) {
+          const [pCount, prodCount] = await Promise.all([
+            tx.documentPart.count({ where: { documentId: sourceId } }),
+            tx.documentProduct.count({ where: { documentId: sourceId } }),
+          ]);
+          if (pCount === 0 && prodCount === 0) {
+            await tx.document.update({
+              where: { id: sourceId },
+              data: { status: DocumentStatuses.OBSOLETE },
+            });
+          }
+        }
+      }
+
+      await tx.document.update({
+        where: { id: req.params.id },
+        data: { status },
+      });
     });
 
     res.json({ message: '狀態已更新' });
@@ -503,6 +539,77 @@ router.get('/files/:fileId/:action', authenticateToken, asyncHandler(async (req:
   } else {
     res.download(safePath, file.originalName);
   }
+}));
+
+// ── 刪除單一附檔（DB + 磁碟） ──────────────────────────────
+router.delete('/files/:fileId', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const file = await prisma.documentFile.findUnique({
+    where: { id: req.params.fileId },
+    include: { document: true },
+  });
+
+  if (!file) {
+    res.status(404).json({ error: '檔案不存在' });
+    return;
+  }
+
+  // 僅文件建立者或 ADMIN 可刪除
+  if (file.document.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN) {
+    res.status(403).json({ error: '無權刪除此檔案' });
+    return;
+  }
+
+  // 先刪 DB 記錄，再刪磁碟（避免 DB 失敗時留下孤立紀錄）
+  await prisma.documentFile.delete({ where: { id: req.params.fileId } });
+
+  try {
+    const safePath = resolveUploadPath(file.filePath);
+    if (fs.existsSync(safePath)) fs.unlinkSync(safePath);
+  } catch {
+    // 磁碟刪除失敗不影響 API 成功回應，僅 console 記錄
+    console.warn(`[DocumentFile] 磁碟檔案刪除失敗：${file.filePath}`);
+  }
+
+  res.json({ message: '附檔已刪除' });
+}));
+
+// ── 刪除整份文件（先清磁碟再刪 DB） ──────────────────────────
+router.delete('/:id', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const doc = await prisma.document.findUnique({
+    where: { id: req.params.id },
+    include: { files: true },
+  });
+
+  if (!doc) {
+    res.status(404).json({ error: '文件不存在' });
+    return;
+  }
+
+  // 僅文件建立者或 ADMIN 可刪除，且狀態必須是 DRAFT 或 OBSOLETE
+  if (doc.createdById !== req.user!.id && req.user!.role !== Roles.ADMIN) {
+    res.status(403).json({ error: '無權刪除此文件' });
+    return;
+  }
+
+  if (doc.status === DocumentStatuses.RELEASED || doc.status === DocumentStatuses.PENDING) {
+    res.status(400).json({ error: '審核中或已發行的文件不可刪除，請先作廢' });
+    return;
+  }
+
+  // 先刪磁碟實體檔
+  for (const file of doc.files) {
+    try {
+      const safePath = resolveUploadPath(file.filePath);
+      if (fs.existsSync(safePath)) fs.unlinkSync(safePath);
+    } catch {
+      console.warn(`[Document] 磁碟檔案刪除失敗：${file.filePath}`);
+    }
+  }
+
+  // 再刪 DB（cascade 會自動刪除 DocumentFile 記錄）
+  await prisma.document.delete({ where: { id: req.params.id } });
+
+  res.json({ message: '文件已刪除', deletedFiles: doc.files.length });
 }));
 
 export default router;

@@ -1,18 +1,29 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma';
 import { authenticateToken, AuthRequest, generateToken } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
 
 const router = Router();
 
+// 登入暴力破解防護：同一 IP 15 分鐘內最多 10 次
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '登入嘗試次數過多，請 15 分鐘後再試' },
+  skipSuccessfulRequests: true, // 成功登入不計入次數
+});
+
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 });
 
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   try {
     const { username, password } = loginSchema.parse(req.body);
 

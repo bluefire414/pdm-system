@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Layout as AntLayout, Menu, Button, Badge, Avatar, Dropdown, Space } from 'antd';
+import { Layout as AntLayout, Menu, Button, Badge, Avatar, Dropdown, Space, Modal, Form, Input, message } from 'antd';
 import {
   DashboardOutlined,
   ToolOutlined,
@@ -10,6 +10,7 @@ import {
   BellOutlined,
   LogoutOutlined,
   UserOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +23,8 @@ const Layout: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [changePwdVisible, setChangePwdVisible] = useState(false);
+  const [changePwdForm] = Form.useForm();
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -47,7 +50,22 @@ const Layout: React.FC = () => {
     ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <UserOutlined />, label: '用戶管理' }] : []),
   ];
 
+  const handleChangePassword = async (values: any) => {
+    try {
+      await client.put('/users/me/password', {
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      });
+      message.success('密碼已更新');
+      setChangePwdVisible(false);
+      changePwdForm.resetFields();
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '修改失敗');
+    }
+  };
+
   const userMenuItems = [
+    { key: 'change-pwd', icon: <KeyOutlined />, label: '修改密碼', onClick: () => setChangePwdVisible(true) },
     { key: 'logout', icon: <LogoutOutlined />, label: '登出', onClick: logout },
   ];
 
@@ -85,6 +103,50 @@ const Layout: React.FC = () => {
           <Outlet />
         </Content>
       </AntLayout>
+      <Modal
+        title="修改密碼"
+        open={changePwdVisible}
+        onOk={() => changePwdForm.submit()}
+        onCancel={() => { setChangePwdVisible(false); changePwdForm.resetFields(); }}
+        okText="確認修改"
+        cancelText="取消"
+      >
+        <Form form={changePwdForm} onFinish={handleChangePassword} layout="vertical">
+          <Form.Item name="currentPassword" label="目前密碼" rules={[{ required: true, message: '請輸入目前密碼' }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            name="newPassword"
+            label="新密碼"
+            rules={[
+              { required: true, message: '請輸入新密碼' },
+              { min: 8, message: '密碼至少 8 個字元' },
+              {
+                pattern: /^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).+$/,
+                message: '密碼需包含大寫、小寫字母及數字',
+              },
+            ]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="確認新密碼"
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: '請再次輸入新密碼' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
+                  return Promise.reject(new Error('兩次輸入的密碼不一致'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password />
+          </Form.Item>
+        </Form>
+      </Modal>
     </AntLayout>
   );
 };

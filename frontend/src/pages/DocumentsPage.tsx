@@ -115,6 +115,9 @@ const DocumentsPage: React.FC = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [docSearch, setDocSearch] = useState('');
+  const [docPage, setDocPage] = useState(1);
+  const [docPageSize, setDocPageSize] = useState(50);
+  const [docTotal, setDocTotal] = useState(0);
 
   // 文件操作 modals
   const [modalVisible, setModalVisible] = useState(false);
@@ -174,13 +177,15 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  const fetchDocuments = async (categoryId: string, keyword?: string) => {
+  const fetchDocuments = async (categoryId: string, keyword?: string, page = 1, pageSize = 50) => {
     setLoading(true);
     try {
       const res = await client.get('/documents', {
-        params: { categoryId, ...(keyword ? { keyword } : {}) },
+        params: { categoryId, page, pageSize, ...(keyword ? { keyword } : {}) },
       });
-      setDocuments(res.data);
+      setDocuments(res.data.data);
+      setDocTotal(res.data.total);
+      setDocPage(res.data.page);
     } finally {
       setLoading(false);
     }
@@ -188,11 +193,11 @@ const DocumentsPage: React.FC = () => {
 
   const fetchOptions = async () => {
     const [pRes, prodRes] = await Promise.all([
-      client.get('/parts'),
-      client.get('/products'),
+      client.get('/parts', { params: { pageSize: 200 } }),
+      client.get('/products', { params: { pageSize: 200 } }),
     ]);
-    setParts(pRes.data);
-    setProducts(prodRes.data);
+    setParts(pRes.data.data);
+    setProducts(prodRes.data.data);
   };
 
   useEffect(() => {
@@ -396,7 +401,8 @@ const DocumentsPage: React.FC = () => {
 
   const handleDocSearch = (value: string) => {
     setDocSearch(value);
-    fetchDocuments(selectedCategory!.id, value || undefined);
+    setDocPage(1);
+    fetchDocuments(selectedCategory!.id, value || undefined, 1, docPageSize);
   };
 
   const canPreview = (file: DocumentFileItem) =>
@@ -856,7 +862,24 @@ const DocumentsPage: React.FC = () => {
         </Space>
       </div>
 
-      <Table rowKey="id" columns={docColumns} dataSource={documents} loading={loading} />
+      <Table
+        rowKey="id"
+        columns={docColumns}
+        dataSource={documents}
+        loading={loading}
+        pagination={{
+          current: docPage,
+          pageSize: docPageSize,
+          total: docTotal,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 筆`,
+          onChange: (p, ps) => {
+            setDocPage(p);
+            setDocPageSize(ps);
+            fetchDocuments(selectedCategory!.id, docSearch || undefined, p, ps);
+          },
+        }}
+      />
 
       {/* 新增文件 modal（多選料號/成品）*/}
       <Modal

@@ -33,6 +33,9 @@ const PartsPage: React.FC = () => {
   const [parts, setParts] = useState<Part[]>([]);
   const [partsLoading, setPartsLoading] = useState(false);
   const [partSearch, setPartSearch] = useState('');
+  const [partPage, setPartPage] = useState(1);
+  const [partPageSize, setPartPageSize] = useState(50);
+  const [partTotal, setPartTotal] = useState(0);
 
   // 零件 CRUD modal
   const [partModalVisible, setPartModalVisible] = useState(false);
@@ -49,13 +52,15 @@ const PartsPage: React.FC = () => {
     }
   };
 
-  const fetchParts = async (categoryId: string, keyword?: string) => {
+  const fetchParts = async (categoryId: string, keyword?: string, page = 1, pageSize = 50) => {
     setPartsLoading(true);
     try {
       const res = await client.get('/parts', {
-        params: { categoryId, ...(keyword ? { keyword } : {}) },
+        params: { categoryId, page, pageSize, ...(keyword ? { keyword } : {}) },
       });
-      setParts(res.data);
+      setParts(res.data.data);
+      setPartTotal(res.data.total);
+      setPartPage(res.data.page);
     } finally {
       setPartsLoading(false);
     }
@@ -138,7 +143,8 @@ const PartsPage: React.FC = () => {
 
   const handlePartSearch = (value: string) => {
     setPartSearch(value);
-    fetchParts(selectedCategory!.id, value || undefined);
+    setPartPage(1);
+    fetchParts(selectedCategory!.id, value || undefined, 1, partPageSize);
   };
 
   const filteredCategories = categories.filter((c) => {
@@ -312,7 +318,24 @@ const PartsPage: React.FC = () => {
         </Space>
       </div>
 
-      <Table rowKey="id" columns={partColumns} dataSource={parts} loading={partsLoading} />
+      <Table
+        rowKey="id"
+        columns={partColumns}
+        dataSource={parts}
+        loading={partsLoading}
+        pagination={{
+          current: partPage,
+          pageSize: partPageSize,
+          total: partTotal,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 筆`,
+          onChange: (p, ps) => {
+            setPartPage(p);
+            setPartPageSize(ps);
+            fetchParts(selectedCategory!.id, partSearch || undefined, p, ps);
+          },
+        }}
+      />
 
       <Modal
         title={editingPart ? '編輯零件' : '新增零件'}

@@ -3,12 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { authenticateToken } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
+import { validateIdParam } from '../lib/validators';
 
 const router = Router();
-
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const categories = await prisma.partCategory.findMany({

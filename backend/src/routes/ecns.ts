@@ -4,12 +4,9 @@ import { prisma } from '../lib/prisma';
 import { authenticateToken, AuthRequest, requireRole } from '../middleware/auth';
 import { DocumentStatuses } from '../lib/constants';
 import { asyncHandler } from '../lib/asyncHandler';
+import { validateIdParam } from '../lib/validators';
 
 const router = Router();
-
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const ecns = await prisma.eCN.findMany({
@@ -102,33 +99,37 @@ router.put('/:id/approve', authenticateToken, requireRole('ADMIN'), asyncHandler
     return;
   }
   try {
-    const ecn = await prisma.eCN.update({
-      where: { id: req.params.id },
-      data: {
-        status: 'APPROVED',
-        reviewedById: req.user!.id,
-      },
-      include: { document: true },
-    });
-
-    // 核准後，被變更的文件產生新版本（Draft）
-    if (ecn.document) {
-      await prisma.document.update({
-        where: { id: ecn.document.id },
+    const ecn = await prisma.$transaction(async (tx) => {
+      const updated = await tx.eCN.update({
+        where: { id: req.params.id },
         data: {
-          status: DocumentStatuses.DRAFT,
-          version: ecn.document.version + 1,
+          status: 'APPROVED',
+          reviewedById: req.user!.id,
+        },
+        include: { document: true },
+      });
+
+      // 核准後，被變更的文件產生新版本（Draft）
+      if (updated.document) {
+        await tx.document.update({
+          where: { id: updated.document.id },
+          data: {
+            status: DocumentStatuses.DRAFT,
+            version: updated.document.version + 1,
+          },
+        });
+      }
+
+      // 通知申請人
+      await tx.notification.create({
+        data: {
+          userId: updated.document.createdById,
+          title: 'ECN 已核准',
+          message: `ECN ${updated.ecnNo} 已核准，文件已產生新版本`,
         },
       });
-    }
 
-    // 通知申請人
-    await prisma.notification.create({
-      data: {
-        userId: ecn.document.createdById,
-        title: 'ECN 已核准',
-        message: `ECN ${ecn.ecnNo} 已核准，文件已產生新版本`,
-      },
+      return updated;
     });
 
     res.json(ecn);
@@ -144,22 +145,26 @@ router.put('/:id/reject', authenticateToken, requireRole('ADMIN'), asyncHandler(
     return;
   }
   try {
-    const ecn = await prisma.eCN.update({
-      where: { id: req.params.id },
-      data: {
-        status: 'REJECTED',
-        reviewedById: req.user!.id,
-      },
-      include: { document: true },
-    });
+    const ecn = await prisma.$transaction(async (tx) => {
+      const updated = await tx.eCN.update({
+        where: { id: req.params.id },
+        data: {
+          status: 'REJECTED',
+          reviewedById: req.user!.id,
+        },
+        include: { document: true },
+      });
 
-    // 通知申請人
-    await prisma.notification.create({
-      data: {
-        userId: ecn.document.createdById,
-        title: 'ECN 已退回',
-        message: `ECN ${ecn.ecnNo} 已被退回`,
-      },
+      // 通知申請人
+      await tx.notification.create({
+        data: {
+          userId: updated.document.createdById,
+          title: 'ECN 已退回',
+          message: `ECN ${updated.ecnNo} 已被退回`,
+        },
+      });
+
+      return updated;
     });
 
     res.json(ecn);

@@ -2,18 +2,15 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
+import { validateIdParam, passwordSchema } from '../lib/validators';
 
 const router = Router();
 
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
-
 const createUserSchema = z.object({
   username: z.string().min(3).max(50),
-  password: z.string().min(6),
+  password: passwordSchema,
   name: z.string().min(1).max(100),
   role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES']),
 });
@@ -22,8 +19,33 @@ const updateUserSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   role: z.enum(['ADMIN', 'ENGINEER', 'MOLD', 'SALES']).optional(),
   isActive: z.boolean().optional(),
-  password: z.string().min(6).optional(),
+  password: passwordSchema.optional(),
 });
+
+// 自行修改密碼（任何已登入用戶，需驗證舊密碼）
+router.put('/me/password', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const schema = z.object({
+    currentPassword: z.string().min(1, '請輸入目前密碼'),
+    newPassword: passwordSchema,
+  });
+  const { currentPassword, newPassword } = schema.parse(req.body);
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user) {
+    res.status(404).json({ error: '用戶不存在' });
+    return;
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.password);
+  if (!valid) {
+    res.status(400).json({ error: '目前密碼不正確' });
+    return;
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
+  res.json({ message: '密碼已更新' });
+}));
 
 // 取得所有使用者 (僅 ADMIN)
 router.get('/', authenticateToken, requireRole('ADMIN'), asyncHandler(async (req, res) => {

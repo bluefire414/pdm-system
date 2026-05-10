@@ -3,27 +3,17 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
+import { sanitizeKeyword, validateIdParam } from '../lib/validators';
 
 const router = Router();
-
-const MAX_KEYWORD_LENGTH = 100;
-
-function sanitizeKeyword(keyword: unknown): string | undefined {
-  if (!keyword) return undefined;
-  const str = String(keyword).trim();
-  if (str.length === 0) return undefined;
-  return str.length > MAX_KEYWORD_LENGTH ? str.substring(0, MAX_KEYWORD_LENGTH) : str;
-}
-
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const { categoryId } = req.query;
   const keyword = sanitizeKeyword(req.query.keyword);
-  const where: any = {};
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10) || 50));
 
+  const where: any = {};
   if (categoryId) where.categoryId = String(categoryId);
   if (keyword) {
     where.OR = [
@@ -33,12 +23,18 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     ];
   }
 
-  const parts = await prisma.part.findMany({
-    where,
-    include: { category: { select: { code: true, name: true } } },
-    orderBy: { partNumber: 'asc' },
-  });
-  res.json(parts);
+  const [total, parts] = await Promise.all([
+    prisma.part.count({ where }),
+    prisma.part.findMany({
+      where,
+      include: { category: { select: { code: true, name: true } } },
+      orderBy: { partNumber: 'asc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  res.json({ data: parts, total, page, pageSize });
 }));
 
 router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {

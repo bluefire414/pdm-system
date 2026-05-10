@@ -1,9 +1,13 @@
+export type UserRole = 'ADMIN' | 'ENGINEER' | 'MOLD' | 'SALES';
+export type DocumentType = 'PART_DRAWING' | 'PRODUCT_DRAWING' | 'SPEC' | 'SOP' | 'QC';
+export type DocumentStatus = 'DRAFT' | 'PENDING' | 'RELEASED' | 'OBSOLETE';
+export type FileType = 'DWG' | 'PDF' | 'THREE_D' | 'THUMB' | 'WORD';
+
 export interface UserItem {
   id: string;
   username: string;
   name: string;
-  role: string;
-  department?: string;
+  role: UserRole;
   isActive: boolean;
   createdAt: string;
 }
@@ -50,33 +54,47 @@ export interface Product {
   series?: Series;
 }
 
+export interface DocumentFile {
+  id: string;
+  documentId: string;
+  fileName: string;
+  originalName: string;
+  fileType: FileType;
+  fileSize: number;
+  mimeType: string;
+  filePath?: string;
+  createdAt: string;
+}
+
 export interface DocumentItem {
   id: string;
-  documentType: string;
-  status: string;
+  documentType: DocumentType;
+  status: DocumentStatus;
   version: number;
   categoryId?: string;
+  category?: DocumentCategory | null;
+  remark?: string | null;
   createdById: string;
+  createdBy?: { name: string };
   createdAt: string;
   updatedAt: string;
   parts: Array<{ partId: string; part: { id: string; partNumber: string; name: string } }>;
   products: Array<{ productId: string; product: { id: string; productCode: string; name: string } }>;
-  files?: DocumentFile[];
+  files: DocumentFile[];
 }
 
-export interface DocumentFile {
-  id: string;
-  fileName: string;
-  originalName: string;
-  fileType: string;
-  fileSize: number;
-  documentId: string;
+/** 分頁回應統一格式 */
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface NotificationItem {
   id: string;
   title: string;
-  content: string;
+  message: string;  // 修正：後端欄位為 message，非 content
   isRead: boolean;
   userId: string;
   createdAt: string;

@@ -3,25 +3,16 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
+import { sanitizeKeyword, validateIdParam } from '../lib/validators';
 
 const router = Router();
-
-const MAX_KEYWORD_LENGTH = 100;
-
-function sanitizeKeyword(keyword: unknown): string | undefined {
-  if (!keyword) return undefined;
-  const str = String(keyword).trim();
-  if (str.length === 0) return undefined;
-  return str.length > MAX_KEYWORD_LENGTH ? str.substring(0, MAX_KEYWORD_LENGTH) : str;
-}
-
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
 
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const keyword = sanitizeKeyword(req.query.keyword);
   const { seriesId } = req.query;
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10) || 50));
+
   const where: any = {};
   if (seriesId) where.seriesId = String(seriesId);
   if (keyword) {
@@ -31,12 +22,18 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     ];
   }
 
-  const products = await prisma.product.findMany({
-    where,
-    include: { series: { select: { code: true, name: true } } },
-    orderBy: { productCode: 'asc' },
-  });
-  res.json(products);
+  const [total, products] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      include: { series: { select: { code: true, name: true } } },
+      orderBy: { productCode: 'asc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  res.json({ data: products, total, page, pageSize });
 }));
 
 router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {

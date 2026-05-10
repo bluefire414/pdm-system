@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import { errorHandler } from './middleware/errorHandler';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -58,15 +59,8 @@ app.get('/api/health', (req, res) => {
 // 靜態檔案服務（上傳的檔案）
 app.use('/uploads', express.static(path.resolve(process.env.UPLOAD_DIR || './uploads')));
 
-// 錯誤處理
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
-  const isDev = process.env.NODE_ENV === 'development';
-  res.status(500).json({
-    error: '伺服器內部錯誤',
-    ...(isDev && err.message ? { details: err.message } : {}),
-  });
-});
+// 統一錯誤處理
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`PDM 伺服器執行於 http://localhost:${PORT}`);

@@ -21,8 +21,27 @@ const STATUS_LABEL: Record<string, string> = {
   OBSOLETE: '已作廢',
 };
 
+const MAX_EXPORT_ROWS = 10000;
+
 router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const where: any = {};
+  if (req.query.type) where.documentType = String(req.query.type);
+  if (req.query.status) where.status = String(req.query.status);
+  if (req.query.categoryId) where.categoryId = String(req.query.categoryId);
+  if (req.query.dateFrom || req.query.dateTo) {
+    where.createdAt = {
+      ...(req.query.dateFrom ? { gte: new Date(String(req.query.dateFrom)) } : {}),
+      ...(req.query.dateTo ? { lte: new Date(String(req.query.dateTo) + 'T23:59:59Z') } : {}),
+    };
+  }
+
+  const total = await prisma.document.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.setHeader('X-Export-Warning', `資料共 ${total} 筆，僅匯出前 ${MAX_EXPORT_ROWS} 筆，請使用過濾條件縮小範圍`);
+  }
+
   const docs = await prisma.document.findMany({
+    where,
     include: {
       parts: { include: { part: { select: { partNumber: true, name: true } } } },
       products: { include: { product: { select: { productCode: true, name: true } } } },
@@ -30,6 +49,7 @@ router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest
       files: { select: { fileType: true, originalName: true } },
     },
     orderBy: { createdAt: 'desc' },
+    take: MAX_EXPORT_ROWS,
   });
 
   const data = docs.map((d) => ({
@@ -55,9 +75,23 @@ router.get('/documents', authenticateToken, asyncHandler(async (req: AuthRequest
 }));
 
 router.get('/parts', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const where: any = {};
+  if (req.query.categoryId) where.categoryId = String(req.query.categoryId);
+  if (req.query.keyword) {
+    const kw = String(req.query.keyword).substring(0, 100);
+    where.OR = [{ partNumber: { contains: kw } }, { name: { contains: kw } }];
+  }
+
+  const total = await prisma.part.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.setHeader('X-Export-Warning', `資料共 ${total} 筆，僅匯出前 ${MAX_EXPORT_ROWS} 筆，請使用過濾條件縮小範圍`);
+  }
+
   const parts = await prisma.part.findMany({
+    where,
     include: { category: { select: { code: true, name: true } } },
     orderBy: { partNumber: 'asc' },
+    take: MAX_EXPORT_ROWS,
   });
 
   const data = parts.map((p) => ({
@@ -78,11 +112,21 @@ router.get('/parts', authenticateToken, asyncHandler(async (req: AuthRequest, re
 }));
 
 router.get('/products', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const where: any = {};
+  if (req.query.seriesId) where.seriesId = String(req.query.seriesId);
+
+  const total = await prisma.product.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.setHeader('X-Export-Warning', `資料共 ${total} 筆，僅匯出前 ${MAX_EXPORT_ROWS} 筆，請使用過濾條件縮小範圍`);
+  }
+
   const products = await prisma.product.findMany({
+    where,
     include: {
       boms: { include: { part: { select: { partNumber: true, name: true } } } },
     },
     orderBy: { productCode: 'asc' },
+    take: MAX_EXPORT_ROWS,
   });
 
   const data = products.map((p) => ({
@@ -103,7 +147,22 @@ router.get('/products', authenticateToken, asyncHandler(async (req: AuthRequest,
 }));
 
 router.get('/ecns', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
+  const where: any = {};
+  if (req.query.status) where.status = String(req.query.status);
+  if (req.query.dateFrom || req.query.dateTo) {
+    where.createdAt = {
+      ...(req.query.dateFrom ? { gte: new Date(String(req.query.dateFrom)) } : {}),
+      ...(req.query.dateTo ? { lte: new Date(String(req.query.dateTo) + 'T23:59:59Z') } : {}),
+    };
+  }
+
+  const total = await prisma.eCN.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.setHeader('X-Export-Warning', `資料共 ${total} 筆，僅匯出前 ${MAX_EXPORT_ROWS} 筆，請使用過濾條件縮小範圍`);
+  }
+
   const ecns = await prisma.eCN.findMany({
+    where,
     include: {
       document: {
         include: {
@@ -114,6 +173,7 @@ router.get('/ecns', authenticateToken, asyncHandler(async (req: AuthRequest, res
       reviewedBy: { select: { name: true } },
     },
     orderBy: { createdAt: 'desc' },
+    take: MAX_EXPORT_ROWS,
   });
 
   const data = ecns.map((e) => ({

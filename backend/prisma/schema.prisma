@@ -20,6 +20,8 @@ model User {
   createdDocuments Document[]     @relation("CreatedBy")
   reviewedECNs     ECN[]          @relation("ReviewedBy")
   notifications    Notification[]
+
+  @@index([role])
 }
 
 model PartCategory {
@@ -47,6 +49,8 @@ model Part {
   category      PartCategory   @relation(fields: [categoryId], references: [id])
   documentParts DocumentPart[]
   productBOMs   ProductBOM[]
+
+  @@index([categoryId])
 }
 
 model Product {
@@ -58,6 +62,8 @@ model Product {
   series           ProductSeries    @relation(fields: [seriesId], references: [id])
   boms             ProductBOM[]
   documentProducts DocumentProduct[]
+
+  @@index([seriesId])
 }
 
 model ProductBOM {
@@ -98,6 +104,7 @@ model Document {
   ecns     ECN[]
 
   @@index([status])
+  @@index([documentType])
   @@index([createdById])
   @@index([categoryId])
 }
@@ -153,6 +160,9 @@ model ECN {
   reviewedBy   User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([documentId])
 }
 
 model Notification {

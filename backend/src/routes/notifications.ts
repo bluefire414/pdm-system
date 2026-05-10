@@ -2,12 +2,9 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../lib/asyncHandler';
+import { validateIdParam } from '../lib/validators';
 
 const router = Router();
-
-function validateIdParam(id: string): boolean {
-  return typeof id === 'string' && id.length > 0;
-}
 
 router.get('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) => {
   const notifications = await prisma.notification.findMany({

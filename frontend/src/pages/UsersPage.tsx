@@ -79,8 +79,12 @@ const UsersPage: React.FC = () => {
   };
 
   const handleConfirmReset = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      message.error('密碼長度至少 6 位');
+    if (!newPassword || newPassword.length < 8) {
+      message.error('密碼至少 8 個字元');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      message.error('密碼需包含大寫、小寫字母及數字');
       return;
     }
     try {
@@ -165,12 +169,17 @@ const UsersPage: React.FC = () => {
         open={resetModalVisible}
         onOk={handleConfirmReset}
         onCancel={() => { setResetModalVisible(false); setResettingUser(null); setNewPassword(''); }}
+        okText="確認重置"
+        cancelText="取消"
       >
         <Input.Password
           placeholder="請輸入新密碼"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
         />
+        <div style={{ marginTop: 6, color: '#888', fontSize: 12 }}>
+          密碼規則：至少 8 個字元，需包含大寫、小寫字母及數字
+        </div>
       </Modal>
     </div>
   );
