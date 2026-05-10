@@ -6,7 +6,7 @@ import path from 'path';
 import cron from 'node-cron';
 import { errorHandler } from './middleware/errorHandler';
 import { prisma } from './lib/prisma';
-import { sendEmail, buildEcnDueSoonEmail } from './services/emailService';
+import { sendEcnDueSoonEmail } from './services/emailService';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -100,17 +100,15 @@ cron.schedule('0 9 * * *', async () => {
       where: { role: 'ADMIN', isActive: true, email: { not: null } },
       select: { email: true },
     });
+    const adminEmails = admins.map((a) => a.email).filter(Boolean) as string[];
 
     for (const ecn of dueSoonEcns) {
-      for (const admin of admins) {
-        if (admin.email) {
-          sendEmail(
-            admin.email,
-            `[提醒] ECN ${ecn.ecnNo} 將於 3 天後逾期`,
-            buildEcnDueSoonEmail(ecn.ecnNo, ecn.title, ecn.dueDate!),
-          );
-        }
-      }
+      sendEcnDueSoonEmail(adminEmails, {
+        ecnId: ecn.id,
+        ecnNumber: ecn.ecnNo,
+        title: ecn.title,
+        dueDate: ecn.dueDate!,
+      });
     }
     console.log(`[Cron] 發送 ${dueSoonEcns.length} 份 ECN 逾期提醒`);
   } catch (err) {

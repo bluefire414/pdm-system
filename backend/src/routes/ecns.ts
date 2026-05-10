@@ -7,10 +7,9 @@ import { asyncHandler } from '../lib/asyncHandler';
 import { validateIdParam } from '../lib/validators';
 import { writeAuditLog, getClientIp } from '../middleware/auditLog';
 import {
-  sendEmail,
-  buildEcnCreatedEmail,
-  buildEcnApprovedEmail,
-  buildEcnRejectedEmail,
+  sendEcnCreatedEmail,
+  sendEcnApprovedEmail,
+  sendEcnRejectedEmail,
 } from '../services/emailService';
 import {
   initWorkflow,
@@ -169,15 +168,13 @@ router.post('/', authenticateToken, asyncHandler(async (req: AuthRequest, res) =
           message: `ECN ${data.ecnNo}: ${data.title}`,
         })),
       });
-      for (const admin of admins) {
-        if (admin.email) {
-          sendEmail(
-            admin.email,
-            `[ECN] 新變更申請待審核：${data.ecnNo}`,
-            buildEcnCreatedEmail(data.ecnNo, data.title, data.description),
-          );
-        }
-      }
+      const adminEmails = admins.map((a) => a.email).filter(Boolean) as string[];
+      sendEcnCreatedEmail(adminEmails, {
+        ecnId: ecn.id,
+        ecnNumber: data.ecnNo,
+        title: data.title,
+        requesterName: req.user!.name,
+      });
     }
 
     writeAuditLog({
@@ -313,7 +310,7 @@ router.put('/:id/approve', authenticateToken, asyncHandler(async (req: AuthReque
       where: { id: ecn.document.createdById }, select: { email: true },
     });
     if (creator?.email) {
-      sendEmail(creator.email, `[ECN] 您的變更申請已核准：${ecn.ecnNo}`, buildEcnApprovedEmail(ecn.ecnNo, ecn.title));
+      sendEcnApprovedEmail(creator.email, { ecnId: ecn.id, ecnNumber: ecn.ecnNo, title: ecn.title });
     }
 
     writeAuditLog({
@@ -360,7 +357,9 @@ router.put('/:id/reject', authenticateToken, asyncHandler(async (req: AuthReques
       where: { id: ecn.document.createdById }, select: { email: true },
     });
     if (creator?.email) {
-      sendEmail(creator.email, `[ECN] 您的變更申請已退回：${ecn.ecnNo}`, buildEcnRejectedEmail(ecn.ecnNo, ecn.title));
+      sendEcnRejectedEmail(creator.email, {
+        ecnId: ecn.id, ecnNumber: ecn.ecnNo, title: ecn.title, comment,
+      });
     }
 
     writeAuditLog({

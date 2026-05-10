@@ -1,22 +1,10 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-const SMTP_CONFIGURED =
-  !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS;
-
-const transporter = SMTP_CONFIGURED
-  ? nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_PORT === '465',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    })
-  : null;
-
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const FROM = process.env.EMAIL_FROM || 'PDM系統 <noreply@send.salecomlab.com>';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const FROM = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@pdm-system';
+
+// ─── HTML 樣板 ─────────────────────────────────────────────────────────────────
 
 function buildHtml(title: string, body: string, linkHref: string, linkText: string): string {
   return `<!DOCTYPE html>
@@ -25,7 +13,8 @@ function buildHtml(title: string, body: string, linkHref: string, linkText: stri
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:32px 0">
-      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <table width="560" cellpadding="0" cellspacing="0"
+             style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
         <tr>
           <td style="background:#1677ff;padding:20px 32px">
             <span style="color:#fff;font-size:20px;font-weight:bold">PDM 產品資料管理系統</span>
@@ -56,61 +45,101 @@ function buildHtml(title: string, body: string, linkHref: string, linkText: stri
 </html>`;
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  if (!transporter) {
-    console.log(`[Email] SMTP 未設定，跳過寄送 to=${to} subject="${subject}"`);
+// ─── 基礎發送函式（fire and forget） ──────────────────────────────────────────
+
+export function sendEmail(to: string | string[], subject: string, html: string): void {
+  if (!resend) {
+    console.log(`[Email] RESEND_API_KEY 未設定，跳過寄送 subject="${subject}"`);
     return;
   }
-  try {
-    await transporter.sendMail({ from: FROM, to, subject, html });
-  } catch (err) {
-    console.error(`[Email] 寄送失敗 to=${to} subject="${subject}"`, err);
-  }
+  resend.emails.send({ from: FROM, to, subject, html })
+    .catch((err) => console.error(`[Email] 寄送失敗 subject="${subject}"`, err));
 }
 
-export function buildEcnCreatedEmail(ecnNo: string, title: string, description: string): string {
-  return buildHtml(
-    `新的 ECN 待審核：${ecnNo}`,
-    `<p>工程師提出了一份新的變更申請，請儘快進行審核。</p>
-     <p><strong>ECN 編號：</strong>${ecnNo}</p>
-     <p><strong>標題：</strong>${title}</p>
-     <p><strong>說明：</strong>${description}</p>`,
-    `${FRONTEND_URL}/ecns`,
-    '前往審核',
+// ─── ECN 通知樣板 ──────────────────────────────────────────────────────────────
+
+/** 新 ECN 待審核 → 寄給所有 ADMIN */
+export function sendEcnCreatedEmail(
+  toList: string[],
+  ecnData: { ecnId: string; ecnNumber: string; title: string; requesterName: string },
+): void {
+  if (toList.length === 0) return;
+  sendEmail(
+    toList,
+    `[待審核] 新 ECN 申請：${ecnData.ecnNumber}`,
+    buildHtml(
+      `新 ECN 申請待審核：${ecnData.ecnNumber}`,
+      `<p>工程師 <strong>${ecnData.requesterName}</strong> 提出了新的工程變更申請，請儘快進行審核。</p>
+       <p><strong>ECN 編號：</strong>${ecnData.ecnNumber}</p>
+       <p><strong>標題：</strong>${ecnData.title}</p>`,
+      `${FRONTEND_URL}/ecns/${ecnData.ecnId}`,
+      '前往審核',
+    ),
   );
 }
 
-export function buildEcnApprovedEmail(ecnNo: string, title: string): string {
-  return buildHtml(
-    `您的變更申請已核准：${ecnNo}`,
-    `<p>您提出的工程變更申請已通過審核，文件版本已更新。</p>
-     <p><strong>ECN 編號：</strong>${ecnNo}</p>
-     <p><strong>標題：</strong>${title}</p>`,
-    `${FRONTEND_URL}/ecns`,
-    '查看詳情',
+/** ECN 審核通過 → 寄給申請者 */
+export function sendEcnApprovedEmail(
+  to: string,
+  ecnData: { ecnId: string; ecnNumber: string; title: string },
+): void {
+  sendEmail(
+    to,
+    `[已核准] ECN ${ecnData.ecnNumber} 審核通過`,
+    buildHtml(
+      `您的變更申請已核准：${ecnData.ecnNumber}`,
+      `<p>您提出的工程變更申請已通過審核，文件版本已更新。</p>
+       <p><strong>ECN 編號：</strong>${ecnData.ecnNumber}</p>
+       <p><strong>標題：</strong>${ecnData.title}</p>`,
+      `${FRONTEND_URL}/ecns/${ecnData.ecnId}`,
+      '查看詳情',
+    ),
   );
 }
 
-export function buildEcnRejectedEmail(ecnNo: string, title: string): string {
-  return buildHtml(
-    `您的變更申請已退回：${ecnNo}`,
-    `<p>您提出的工程變更申請已被退回，請根據審核意見修改後重新提交。</p>
-     <p><strong>ECN 編號：</strong>${ecnNo}</p>
-     <p><strong>標題：</strong>${title}</p>`,
-    `${FRONTEND_URL}/ecns`,
-    '查看詳情',
+/** ECN 審核退回 → 寄給申請者（含退回意見） */
+export function sendEcnRejectedEmail(
+  to: string,
+  ecnData: { ecnId: string; ecnNumber: string; title: string; comment?: string },
+): void {
+  const commentSection = ecnData.comment
+    ? `<p><strong>退回意見：</strong>${ecnData.comment}</p>`
+    : '';
+  sendEmail(
+    to,
+    `[已退回] ECN ${ecnData.ecnNumber} 審核退回`,
+    buildHtml(
+      `您的變更申請已退回：${ecnData.ecnNumber}`,
+      `<p>您提出的工程變更申請已被退回，請根據審核意見修改後重新提交。</p>
+       <p><strong>ECN 編號：</strong>${ecnData.ecnNumber}</p>
+       <p><strong>標題：</strong>${ecnData.title}</p>
+       ${commentSection}`,
+      `${FRONTEND_URL}/ecns/${ecnData.ecnId}`,
+      '查看詳情',
+    ),
   );
 }
 
-export function buildEcnDueSoonEmail(ecnNo: string, title: string, dueDate: Date): string {
-  const dueDateStr = dueDate.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  return buildHtml(
-    `ECN ${ecnNo} 將於 3 天後逾期`,
-    `<p>以下 ECN 即將到達截止日期，請盡快完成審核。</p>
-     <p><strong>ECN 編號：</strong>${ecnNo}</p>
-     <p><strong>標題：</strong>${title}</p>
-     <p><strong>截止日期：</strong>${dueDateStr}</p>`,
-    `${FRONTEND_URL}/ecns`,
-    '前往審核',
+/** ECN 即將逾期提醒 → 寄給所有 ADMIN（cron job 使用） */
+export function sendEcnDueSoonEmail(
+  toList: string[],
+  ecnData: { ecnId: string; ecnNumber: string; title: string; dueDate: Date },
+): void {
+  if (toList.length === 0) return;
+  const dueDateStr = ecnData.dueDate.toLocaleDateString('zh-TW', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  sendEmail(
+    toList,
+    `[提醒] ECN ${ecnData.ecnNumber} 將於 3 天後逾期`,
+    buildHtml(
+      `ECN ${ecnData.ecnNumber} 將於 3 天後逾期`,
+      `<p>以下 ECN 即將到達截止日期，請盡快完成審核。</p>
+       <p><strong>ECN 編號：</strong>${ecnData.ecnNumber}</p>
+       <p><strong>標題：</strong>${ecnData.title}</p>
+       <p><strong>截止日期：</strong>${dueDateStr}</p>`,
+      `${FRONTEND_URL}/ecns/${ecnData.ecnId}`,
+      '前往審核',
+    ),
   );
 }
